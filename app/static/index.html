@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Clinical Evidence Assistant</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="site-header">
+        <h1>Clinical Evidence Assistant</h1>
+        <p class="tagline">
+          Interpret study design, findings, and evidence strength from a PubMed abstract.
+        </p>
+        <p class="disclaimer">
+          Provisional estimate from the abstract only — a study aid, not medical advice.
+        </p>
+      </header>
+
+      <section class="panel input-panel">
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" data-mode="pmid" role="tab" type="button">By PubMed ID</button>
+          <button class="tab" data-mode="text" role="tab" type="button">Paste abstract</button>
+        </div>
+
+        <form id="form-pmid" class="mode" data-mode="pmid">
+          <label for="pmid">PubMed ID (PMID)</label>
+          <div class="row">
+            <input id="pmid" name="pmid" type="text" inputmode="numeric"
+                   placeholder="e.g. 33301246" autocomplete="off" />
+            <button type="submit" class="btn primary">Analyze</button>
+          </div>
+          <p class="hint">Fetches the abstract live from PubMed via NCBI E-utilities.</p>
+        </form>
+
+        <form id="form-text" class="mode is-hidden" data-mode="text">
+          <label for="title">Title <span class="muted">(optional)</span></label>
+          <input id="title" name="title" type="text" placeholder="Article title" autocomplete="off" />
+          <label for="abstract">Abstract</label>
+          <textarea id="abstract" name="abstract" rows="7"
+                    placeholder="Paste the abstract text here…"></textarea>
+          <div class="row end">
+            <button type="button" class="btn ghost" id="btn-example">Try an example</button>
+            <button type="submit" class="btn primary">Analyze</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="status" class="status is-hidden" aria-live="polite"></section>
+      <section id="result" class="panel result is-hidden" aria-live="polite"></section>
+
+      <footer class="site-footer">
+        <span>Rule-based MVP · <a href="/docs" target="_blank" rel="noopener">API docs</a></span>
+      </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

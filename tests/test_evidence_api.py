@@ -68,3 +68,10 @@ def test_analyze_pmid_not_found_returns_404(monkeypatch):
     monkeypatch.setattr(pubmed_service, "fetch_article", fake_fetch)
     response = client.get("/api/evidence/article/000")
     assert response.status_code == 404
+
+
+def test_index_page_served():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Clinical Evidence Assistant" in response.text

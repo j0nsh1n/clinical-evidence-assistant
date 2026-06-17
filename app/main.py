@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.routers import evidence
+
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
 
 settings = get_settings()
 
@@ -20,6 +27,13 @@ app = FastAPI(
 )
 
 app.include_router(evidence.router)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    """Serve the single-page UI."""
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health", tags=["meta"])
