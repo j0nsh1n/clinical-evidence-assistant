@@ -126,4 +126,7 @@ def fetch_article(pmid: str) -> dict:
     items = records.get("PubmedArticle", []) if isinstance(records, dict) else []
     if not items:
         raise ArticleNotFound(f"No PubMed record for PMID {pmid}.")
-    return _parse_record(items[0])
+    try:
+        return _parse_record(items[0])
+    except (KeyError, IndexError, TypeError) as exc:
+        raise PubMedError(f"Could not parse PubMed record for PMID {pmid}: {exc}") from exc

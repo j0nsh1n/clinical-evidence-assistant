@@ -119,14 +119,14 @@ pytest tests/test_evidence_rules.py   # just the pure rule engine
 - [x] **Phase 3** — PubMed retrieval (`pubmed_service.py`)
 - [x] **Phase 4** — Rule-based extraction (design, sample size, PICO hints, key finding)
 - [x] **Phase 5** — Provisional evidence scoring + caution notes
-- [ ] **Phase 6** — Frontend evidence card
+- [x] **Phase 6** — Frontend evidence card (`app/static/`: PMID + paste modes, color-coded badges, cautions, loading/error states)
 - [x] **Phase 7** — Unit + integration tests (ongoing: grow the eval set)
 - [ ] **Phase 8** — Optional LLM refinement of summaries/limitations (`extraction_method="rules+llm"`)
 - [ ] **Phase 9** — Multi-article comparison + portfolio polish
 
 ### Next up
-1. Grow `tests/fixtures/sample_abstracts.py` into a 15–30 abstract benchmark with
-   measured accuracy.
-2. Tighten PICO/population/intervention extraction beyond first-sentence hints.
-3. Build the frontend evidence card (study-design + evidence-level badges,
-   sample size, key finding, cautions) with loading/empty/error states.
+1. Grow `tests/fixtures/sample_abstracts.py` into a 15–30 abstract benchmark with a
+   measured accuracy figure.
+2. Optional LLM refinement of the summary / limitations (Phase 8), tagged
+   `extraction_method="rules+llm"`.
+3. Multi-article comparison view (Phase 9).

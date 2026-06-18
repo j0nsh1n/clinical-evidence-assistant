@@ -66,3 +66,42 @@ def test_key_finding_prefers_conclusion_section():
         sections={"CONCLUSIONS": "The treatment was effective."},
     )
     assert finding == "The treatment was effective."
+
+
+def test_pico_extracts_concise_distinct_phrases():
+    hints = evidence_rules.extract_pico_hints(
+        "In this trial, a total of 512 adults with moderate asthma were enrolled and "
+        "randomized to the inhaled therapy or placebo. The primary outcome was the annual "
+        "rate of asthma exacerbations over 12 months."
+    )
+    assert hints["population"] == "512 adults with moderate asthma"
+    assert hints["intervention_or_exposure"] == "the inhaled therapy"
+    assert hints["comparator"] == "placebo"
+    assert hints["primary_outcome"] == "the annual rate of asthma exacerbations over 12 months"
+    # The fields must not all collapse to the same sentence (the old behaviour).
+    assert len({hints["population"], hints["intervention_or_exposure"], hints["comparator"]}) == 3
+
+
+def test_pico_population_without_count():
+    hints = evidence_rules.extract_pico_hints("Adults with type 2 diabetes were followed for five years.")
+    assert hints["population"] == "Adults with type 2 diabetes"
+
+
+def test_pico_returns_none_when_absent():
+    hints = evidence_rules.extract_pico_hints("This document contains no structured clinical content.")
+    assert hints["population"] is None
+    assert hints["intervention_or_exposure"] is None
+    assert hints["comparator"] is None
+    assert hints["primary_outcome"] is None
+
+
+def test_pico_risk_factor_exposure_excludes_leading_verb():
+    hints = evidence_rules.extract_pico_hints(
+        "We included 450 patients with lung cancer to examine smoking as a risk factor."
+    )
+    assert hints["intervention_or_exposure"] == "smoking"
+
+
+def test_pico_population_at_end_of_text():
+    hints = evidence_rules.extract_pico_hints("We enrolled 88 adults with chronic pain")
+    assert hints["population"] == "88 adults with chronic pain"

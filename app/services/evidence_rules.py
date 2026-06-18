@@ -132,49 +132,65 @@ def extract_sample_size(text: str) -> Optional[int]:
 
 
 # ---------------------------------------------------------------------------
-# Light PICO hints (sentence-level; refined later, optionally by an LLM)
+# PICO hints — targeted phrase extraction
 # ---------------------------------------------------------------------------
+# Each field has an ordered list of regex patterns; the first match wins and its
+# first capturing group is returned as a concise phrase. A trailing look-ahead
+# stops the captured phrase at a natural boundary (a clause verb, conjunction, or
+# punctuation) instead of swallowing the rest of the sentence. When nothing
+# matches we return None ("not reported") rather than a vague guess.
 
-_PICO_KEYWORDS: Dict[str, List[str]] = {
-    "population": [
-        "patients",
-        "participants",
-        "subjects",
-        "adults",
-        "children",
-        "elderly",
-        "women",
-        "men",
-        "cohort",
-    ],
-    "intervention_or_exposure": [
-        "treatment",
-        "therapy",
-        "intervention",
-        "drug",
-        "vaccine",
-        "surgery",
-        "exposure",
-        "program",
-    ],
-    "comparator": [
-        "versus",
-        " vs ",
-        "compared with",
-        "compared to",
-        "placebo",
-        "control group",
-        "standard care",
-    ],
-    "primary_outcome": [
-        "primary outcome",
-        "primary endpoint",
-        "mortality",
-        "survival",
-        "incidence of",
-        "risk of",
-    ],
-}
+# Population nouns shared across the population patterns.
+_POP = (
+    r"patients|adults|children|participants|subjects|individuals|"
+    r"women|men|infants|neonates|nurses|people"
+)
+
+# Clause boundaries that end a population phrase.
+_POP_END = (
+    r"(?=\s+(?:were|was|underwent|received|enrolled|for|in|over|during|and|to|"
+    r"are|is|will|had)\b|[.,;:]|$)"
+)
+
+_POPULATION_PATTERNS: List[str] = [
+    rf"(\d[\d,]{{0,8}}\s+(?:{_POP})(?:\s+(?:with|aged|who\s+had)\s+[^.,;:]+?)?){_POP_END}",
+    rf"((?:{_POP})\s+(?:with|aged|who\s+had)\s+[^.,;:]+?){_POP_END}",
+    rf"(\d[\d,]{{0,8}}\s+(?:{_POP}))\b",
+]
+
+_INTERVENTION_PATTERNS: List[str] = [
+    r"(?:randomi[sz]ed|assigned|allocated)\s+to\s+(?:receive\s+)?([^.,;:]+?)"
+    r"(?=\s+(?:or|versus|vs\.?|compared|and)\b|[.,;:])",
+    r"(?:treated with|received|to receive|underwent)\s+([^.,;:]+?)"
+    r"(?=\s+(?:or|versus|vs\.?|compared|and|for)\b|[.,;:])",
+    r"(?:association between|exposure to|effect of|efficacy of|impact of|safety of)\s+([^.,;:]+?)"
+    r"(?=\s+(?:and|on|in|versus|vs\.?)\b|[.,;:])",
+    r"(\w+)\s+as\s+a\s+risk\s+factor",
+]
+
+_COMPARATOR_PATTERNS: List[str] = [
+    r"(?:versus|vs\.?|compared\s+(?:with|to)|relative to)\s+([^.,;:]+?)"
+    r"(?=\s+(?:in|for|at|over|during|among|on)\b|[.,;:]|$)",
+    r"\bor\s+(placebo|controls?|standard care|usual care|sham(?:\s+\w+)?|no treatment)\b",
+    r"(\d[\d,]{0,8}\s+matched controls|matched controls|placebo|standard care|usual care|control group|sham)",
+]
+
+_OUTCOME_PATTERNS: List[str] = [
+    r"primary (?:outcome|endpoint|end\s?point)s?\s+(?:measures?\s+)?(?:was|were|is|are|:)\s+([^.;]+?)(?=[.;]|$)",
+    r"primary (?:outcome|endpoint)\s+(?:of|:)\s+([^.;]+?)(?=[.;]|$)",
+]
+
+
+def _first_capture(text: str, patterns: List[str]) -> Optional[str]:
+    """Return the first pattern's captured phrase (whitespace-cleaned), or None."""
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            phrase = (match.group(1) if match.groups() else match.group(0)).strip(" ,.;:")
+            phrase = re.sub(r"\s+", " ", phrase)
+            if phrase:
+                return phrase
+    return None
 
 
 def _split_sentences(text: str) -> List[str]:
@@ -182,14 +198,14 @@ def _split_sentences(text: str) -> List[str]:
 
 
 def extract_pico_hints(text: str) -> Dict[str, Optional[str]]:
-    """Return the first sentence matching each PICO field's keywords (or None)."""
-    hints: Dict[str, Optional[str]] = {field: None for field in _PICO_KEYWORDS}
-    for sentence in _split_sentences(text):
-        low = sentence.lower()
-        for field, keywords in _PICO_KEYWORDS.items():
-            if hints[field] is None and any(kw in low for kw in keywords):
-                hints[field] = sentence
-    return hints
+    """Extract a concise phrase for each PICO field (or None when not found)."""
+    normalized = re.sub(r"\s+", " ", text or "")
+    return {
+        "population": _first_capture(normalized, _POPULATION_PATTERNS),
+        "intervention_or_exposure": _first_capture(normalized, _INTERVENTION_PATTERNS),
+        "comparator": _first_capture(normalized, _COMPARATOR_PATTERNS),
+        "primary_outcome": _first_capture(normalized, _OUTCOME_PATTERNS),
+    }
 
 
 def extract_key_finding(abstract: str, sections: Optional[Dict[str, str]] = None) -> Optional[str]:

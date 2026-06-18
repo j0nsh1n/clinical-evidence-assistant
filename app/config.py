@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Clinical Evidence Assistant"
-    app_version: str = "0.1.0"
+    app_version: str = "0.2.0"
 
     # NCBI E-utilities (PubMed). NCBI asks every caller to identify themselves by
     # email; an API key raises the rate limit from 3 to 10 requests/second.
