@@ -312,3 +312,85 @@ def build_caution_notes(
     elif sample_size is not None and sample_size < 50:
         notes.append(f"Small reported sample size (n={sample_size}) may limit precision.")
     return notes
+
+
+# ---------------------------------------------------------------------------
+# Key-points summary (deterministic synthesis of the extracted fields)
+# ---------------------------------------------------------------------------
+
+
+def _first_sentence(text: str, max_len: int = 220) -> str:
+    """First sentence of ``text``, truncated, so the summary stays short."""
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    sentence = parts[0] if parts else (text or "").strip()
+    if len(sentence) > max_len:
+        sentence = sentence[:max_len].rsplit(" ", 1)[0] + "…"
+    return sentence
+
+
+def compose_summary(
+    *,
+    study_design: StudyDesign,
+    evidence_level: EvidenceLevel,
+    evidence_label: str,
+    population: Optional[str],
+    intervention_or_exposure: Optional[str],
+    comparator: Optional[str],
+    primary_outcome: Optional[str],
+    sample_size: Optional[int],
+    key_finding: Optional[str],
+    has_abstract: bool,
+) -> Tuple[Optional[str], List[str]]:
+    """Compose a short plain-language summary and an 'at a glance' bullet list.
+
+    Purely a synthesis of the already-extracted fields — no new interpretation —
+    so it stays explainable (extraction_method='rules').
+    """
+    design_name = (
+        study_design.value.replace("_", " ") if study_design != StudyDesign.unclear else None
+    )
+    grade = (
+        f"{evidence_level.value} · {evidence_label}"
+        if evidence_level != EvidenceLevel.unclear
+        else None
+    )
+    finding = _first_sentence(key_finding) if key_finding else None
+
+    bullets: List[str] = []
+    if design_name:
+        bullets.append(f"Design: {design_name}" + (f" (level {grade})" if grade else ""))
+    if sample_size is not None:
+        bullets.append(f"Sample size: n = {sample_size:,}")
+    if population:
+        bullets.append(f"Population: {population}")
+    if intervention_or_exposure and comparator:
+        bullets.append(f"Compared: {intervention_or_exposure} vs {comparator}")
+    elif intervention_or_exposure:
+        bullets.append(f"Intervention/exposure: {intervention_or_exposure}")
+    if primary_outcome:
+        bullets.append(f"Outcome: {primary_outcome}")
+    if finding:
+        bullets.append(f"Finding: {finding}")
+
+    if not has_abstract or (not design_name and not population and not key_finding):
+        return None, bullets
+
+    head = (design_name[0].upper() + design_name[1:]) if design_name else "Study"
+    if grade:
+        head += f" ({grade})"
+    clause = head
+    if population:
+        clause += f" in {population}"
+    if sample_size is not None:
+        clause += f" (n = {sample_size:,})"
+    if intervention_or_exposure and comparator:
+        clause += f", comparing {intervention_or_exposure} with {comparator}"
+    elif intervention_or_exposure:
+        clause += f", examining {intervention_or_exposure}"
+
+    sentences = [clause.rstrip(".") + "."]
+    if primary_outcome:
+        sentences.append(f"Primary outcome: {primary_outcome.rstrip('.')}.")
+    if finding:
+        sentences.append(finding.rstrip(".") + ".")
+    return " ".join(sentences), bullets

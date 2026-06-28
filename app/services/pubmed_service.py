@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from Bio import Entrez
 
 from app.config import get_settings
+from app.services.errors import ArticleNotFound, SourceError
 
 _settings = get_settings()
 
@@ -27,12 +28,9 @@ if _settings.ncbi_api_key:
     Entrez.api_key = _settings.ncbi_api_key
 
 
-class PubMedError(RuntimeError):
-    """PubMed could not be reached or returned an unusable response."""
-
-
-class ArticleNotFound(PubMedError):
-    """A PMID resolved to no record."""
+# PubMed transport/parse failures are plain SourceErrors; keep the old name as an
+# alias so existing imports (and the router) keep working.
+PubMedError = SourceError
 
 
 def search(query: str, max_results: int = 20) -> List[str]:
@@ -219,14 +217,19 @@ def _parse_summary(docsum: dict) -> dict:
     authors = [str(a).strip() for a in docsum.get("AuthorList", []) or [] if str(a).strip()]
     journal = str(docsum.get("FullJournalName", "") or docsum.get("Source", "")).strip() or None
 
+    pmid = str(docsum.get("Id", "")).strip()
     return {
-        "pmid": str(docsum.get("Id", "")).strip(),
+        "source": "pubmed",
+        "article_id": pmid,
+        "pmid": pmid,
         "title": str(docsum.get("Title", "")).strip() or None,
         "authors": authors,
         "journal": journal,
         "year": year,
         "publication_types": pub_types,
         "doi": str(docsum.get("DOI", "")).strip() or None,
+        "is_preprint": False,
+        "is_open_access": False,
     }
 
 

@@ -1,9 +1,11 @@
 # Clinical Evidence Assistant
 
-A small FastAPI app that lets you **search PubMed**, open any article, and get a
-**provisional** evidence level plus structured study details — to help students
-interpret study design, findings, and evidence strength. You can also analyze an
-article directly by PubMed ID or by pasting an abstract.
+A FastAPI web app that lets you **search the clinical literature** (Europe PMC or
+PubMed), open any article, and get a **provisional** evidence level plus structured
+study details and a plain-language summary — to help students interpret study
+design, findings, and evidence strength. You can also analyze an article by PubMed
+ID or by pasting an abstract. Includes **dark mode** and in-card **definitions** for
+every metric.
 
 > ⚠️ **Not medical advice.** Evidence levels are estimated from the *abstract
 > only* using transparent rules, not a full critical appraisal. Output is a
@@ -11,18 +13,22 @@ article directly by PubMed ID or by pasting an abstract.
 
 ---
 
-## Feature spec (Phase 1)
+## What it does
 
-**Input** — a PubMed **search query**, or one article supplied as either:
-- a PubMed `pmid` (the abstract + metadata are fetched via NCBI E-utilities), or
+**Input** — a **search query** (Europe PMC or PubMed), or one article supplied as:
+- a PubMed `pmid` / source `article_id` (abstract + metadata fetched live), or
 - `title` + `abstract` text directly.
 
 **Output** — a structured `EvidenceAnalysis` (JSON): study design, clinical
-question type, population, sample size, PICO hints, key finding, a provisional
-A/B/C/D evidence level with a human label, a confidence score, caution notes, the
-extraction method, and article metadata (authors, journal, citation, DOI, PubMed
-publication types, MeSH topics). Search returns lightweight summaries, each with
-an evidence-level hint from its publication type.
+question type, population, sample size, PICO hints, key finding, a **plain-language
+key-points summary**, a provisional A/B/C/D evidence level, a confidence score,
+caution notes, and article metadata (authors, journal, citation, DOI, publication
+types, MeSH topics, **open-access link**, **preprint flag**). Search returns
+lightweight summaries, each with an evidence-level hint from its publication type.
+
+**Sources** — **Europe PMC** (default; a superset of PubMed that also indexes
+medRxiv/bioRxiv preprints and PMC full text) and **PubMed**. **Unpaywall** adds a
+legal open-access full-text link by DOI when one exists (no piracy).
 
 **MVP** — single-article, abstract-based, rule-driven analysis behind one
 endpoint, with graceful handling of missing abstracts and unknown designs.
@@ -46,11 +52,14 @@ clinical-evidence-assistant/
 │   ├── schemas/
 │   │   └── evidence.py          # Pydantic models (the stable contract)
 │   ├── services/
-│   │   ├── pubmed_service.py    # ESearch/EFetch/ESummary, metadata + abstract sections
-│   │   ├── evidence_rules.py    # pure functions: design (text + pub-type), PICO, mapping, cautions
-│   │   └── evidence_service.py  # orchestration: search / fetch -> extract -> assemble
-│   └── static/                  # single-page web UI (index.html, style.css, app.js)
-└── tests/                       # 53 tests (rules, PubMed layer, API; PubMed mocked)
+│   │   ├── pubmed_service.py    # PubMed (Entrez ESearch/EFetch/ESummary)
+│   │   ├── europepmc_service.py # Europe PMC (REST) — articles + preprints + OA
+│   │   ├── unpaywall_service.py # legal open-access full-text lookup by DOI
+│   │   ├── evidence_rules.py    # pure rules: design (text + pub-type), PICO, mapping, cautions, summary
+│   │   ├── evidence_service.py  # orchestration: source dispatch -> extract -> assemble
+│   │   └── errors.py            # shared source exceptions
+│   └── static/                  # web UI: Heimr theme, dark mode, metric definitions (index/style/app)
+└── tests/                       # 68 tests (rules, PubMed, Europe PMC, Unpaywall, API; network mocked)
 ```
 
 Design principle: **thin routes, logic in services, rules pure and testable.**
@@ -101,10 +110,15 @@ curl -X POST http://127.0.0.1:8000/api/evidence/analyze \
   -d '{"title":"An RCT of drug X","abstract":"In this randomized, double-blind, placebo-controlled trial, 320 patients were enrolled..."}'
 
 # Analyze a real PubMed article by PMID
-curl http://127.0.0.1:8000/api/evidence/article/33301246
+curl http://127.0.0.1:8000/api/evidence/article/23440795
 
-# Search PubMed (returns summaries with evidence-level hints)
+# Search Europe PMC (default) — summaries with evidence-level hints
 curl "http://127.0.0.1:8000/api/search?q=statins+cardiovascular+mortality"
+
+# Analyze a Europe PMC article (source + article_id)
+curl -X POST http://127.0.0.1:8000/api/evidence/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"source":"europepmc","article_id":"MED/23440795"}'
 ```
 
 ## Tests
@@ -118,19 +132,15 @@ pytest tests/test_evidence_rules.py   # just the pure rule engine
 
 ## Roadmap
 
-- [x] **Phase 1** — Scope + data model (`schemas/evidence.py`, this README)
-- [x] **Phase 2** — Backend skeleton (router / services)
-- [x] **Phase 3** — PubMed retrieval (`pubmed_service.py`)
-- [x] **Phase 4** — Rule-based extraction (design, sample size, PICO hints, key finding)
-- [x] **Phase 5** — Provisional evidence scoring + caution notes
-- [x] **Phase 6** — Frontend evidence card (`app/static/`: PMID + paste modes, color-coded badges, cautions, loading/error states)
-- [x] **Phase 7** — Unit + integration tests (ongoing: grow the eval set)
-- [ ] **Phase 8** — Optional LLM refinement of summaries/limitations (`extraction_method="rules+llm"`)
-- [ ] **Phase 9** — Multi-article comparison + portfolio polish
+Shipped in **1.0**:
+- [x] Schema, service layer, rule engine, evidence scoring, tests
+- [x] PubMed + **Europe PMC** sources (pluggable dispatch) with **preprint** support
+- [x] **Unpaywall** legal open-access full-text links
+- [x] Rule-based **key-points summary**; publication-type-aware design classification
+- [x] Web UI ("Heimr"): **dark mode** (system + toggle), source selector, **metric definitions + glossary**
 
-### Next up
-1. Grow `tests/fixtures/sample_abstracts.py` into a 15–30 abstract benchmark with a
-   measured accuracy figure.
-2. Optional LLM refinement of the summary / limitations (Phase 8), tagged
-   `extraction_method="rules+llm"`.
-3. Multi-article comparison view (Phase 9).
+Planned:
+- [ ] Optional **LLM refinement** of summaries/limitations (`extraction_method="rules+llm"`)
+- [ ] **ClinicalTrials.gov** trial-record tab
+- [ ] **Multi-article comparison** view
+- [ ] A measured accuracy benchmark from a larger labelled fixture set

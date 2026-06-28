@@ -3,19 +3,38 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Clinical Evidence Assistant</title>
+    <script>
+      // Pre-paint theme: resolve stored preference (light | dark | system) before
+      // the stylesheet applies, to avoid a flash of the wrong theme.
+      (function () {
+        var pref = localStorage.getItem("theme") || "system";
+        var mq = window.matchMedia("(prefers-color-scheme: dark)");
+        document.documentElement.dataset.theme = pref === "system" ? (mq.matches ? "dark" : "light") : pref;
+        window.__themePref = pref;
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
     <div class="wrap">
-      <header class="site-header">
-        <h1>Clinical Evidence Assistant</h1>
-        <p class="tagline">
-          Interpret study design, findings, and evidence strength from a PubMed abstract.
-        </p>
-        <p class="disclaimer">
-          Provisional estimate from the abstract only — a study aid, not medical advice.
-        </p>
+      <header class="masthead">
+        <div class="mast-main">
+          <p class="eyebrow">Clinical reading aid — not medical advice</p>
+          <h1>Clinical Evidence Assistant</h1>
+        </div>
+        <div class="theme-toggle" role="group" aria-label="Theme">
+          <button data-theme-set="light" type="button">Light</button>
+          <button data-theme-set="dark" type="button">Dark</button>
+          <button data-theme-set="system" type="button">System</button>
+        </div>
       </header>
 
       <section class="panel input-panel">
@@ -26,23 +45,27 @@
         </div>
 
         <form id="form-search" class="mode" data-mode="search">
-          <label for="query">Search PubMed</label>
+          <label for="query">Search the literature</label>
           <div class="row">
+            <select id="source" aria-label="Source database">
+              <option value="europepmc">Europe PMC</option>
+              <option value="pubmed">PubMed</option>
+            </select>
             <input id="query" name="query" type="text"
                    placeholder="e.g. statins cardiovascular mortality" autocomplete="off" />
             <button type="submit" class="btn primary">Search</button>
           </div>
-          <p class="hint">Searches PubMed and lists matching articles — click Analyze on any result.</p>
+          <p class="hint">Europe PMC covers PubMed plus preprints and open-access full text.</p>
         </form>
 
         <form id="form-pmid" class="mode is-hidden" data-mode="pmid">
           <label for="pmid">PubMed ID (PMID)</label>
           <div class="row">
             <input id="pmid" name="pmid" type="text" inputmode="numeric"
-                   placeholder="e.g. 33301246" autocomplete="off" />
+                   placeholder="e.g. 23440795" autocomplete="off" />
             <button type="submit" class="btn primary">Analyze</button>
           </div>
-          <p class="hint">Fetches the abstract live from PubMed via NCBI E-utilities.</p>
+          <p class="hint">Fetches the abstract live from PubMed.</p>
         </form>
 
         <form id="form-text" class="mode is-hidden" data-mode="text">
@@ -63,7 +86,7 @@
       <section id="result" class="panel result is-hidden" aria-live="polite"></section>
 
       <footer class="site-footer">
-        <span>Rule-based MVP · <a href="/docs" target="_blank" rel="noopener">API docs</a></span>
+        <span>Rule-based estimate · <a href="/docs" target="_blank" rel="noopener">API docs</a></span>
       </footer>
     </div>
 

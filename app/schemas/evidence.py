@@ -64,12 +64,20 @@ class AnalyzeRequest(BaseModel):
     already held by the caller).
     """
 
-    pmid: Optional[str] = Field(default=None, description="PubMed ID to fetch and analyze.")
+    source: Optional[str] = Field(default=None, description="Article source: 'pubmed' or 'europepmc'.")
+    article_id: Optional[str] = Field(default=None, description="Source-native article id to fetch.")
+    pmid: Optional[str] = Field(default=None, description="PubMed ID (shorthand for source='pubmed').")
     title: Optional[str] = Field(default=None, description="Article title, if supplying text directly.")
     abstract: Optional[str] = Field(default=None, description="Abstract text, if supplying text directly.")
 
     def has_inline_text(self) -> bool:
         return bool(self.abstract and self.abstract.strip())
+
+    def resolved_source(self) -> str:
+        return (self.source or "pubmed").strip().lower()
+
+    def resolved_id(self) -> Optional[str]:
+        return self.article_id or self.pmid
 
 
 class StudyDesignResult(BaseModel):
@@ -100,6 +108,9 @@ class EvidenceAnalysis(BaseModel):
     doi: Optional[str] = None
     publication_types: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
+    is_open_access: bool = False
+    oa_url: Optional[str] = None
+    is_preprint: bool = False
 
     # --- structured extraction ---
     study_design: StudyDesign = StudyDesign.unclear
@@ -115,6 +126,8 @@ class EvidenceAnalysis(BaseModel):
     primary_outcome: Optional[str] = None
     key_finding: Optional[str] = None
     limitations: Optional[str] = None
+    key_points_summary: Optional[str] = None
+    key_points: List[str] = Field(default_factory=list)
 
     # --- provisional scoring ---
     evidence_level: EvidenceLevel = EvidenceLevel.unclear
@@ -135,13 +148,17 @@ class ArticleSummary(BaseModel):
     a full per-article analysis.
     """
 
-    pmid: str
+    source: str = "pubmed"
+    article_id: str
+    pmid: Optional[str] = None
     title: Optional[str] = None
     authors: List[str] = Field(default_factory=list)
     journal: Optional[str] = None
     year: Optional[str] = None
     publication_types: List[str] = Field(default_factory=list)
     doi: Optional[str] = None
+    is_preprint: bool = False
+    is_open_access: bool = False
     study_design: StudyDesign = StudyDesign.unclear
     evidence_level: EvidenceLevel = EvidenceLevel.unclear
     evidence_label: str = "Unclear"

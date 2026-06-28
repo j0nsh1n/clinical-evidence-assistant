@@ -133,3 +133,39 @@ def test_combined_falls_back_to_text_when_pubtype_uninformative():
         "a prospective cohort study of adults", ["Journal Article"]
     )
     assert result.design == StudyDesign.cohort
+
+
+def test_compose_summary_sentence_and_bullets():
+    summary, bullets = evidence_rules.compose_summary(
+        study_design=StudyDesign.randomized_controlled_trial,
+        evidence_level=EvidenceLevel.b,
+        evidence_label="Moderate",
+        population="512 adults with asthma",
+        intervention_or_exposure="the inhaled therapy",
+        comparator="placebo",
+        primary_outcome="annual exacerbation rate",
+        sample_size=512,
+        key_finding="It reduced exacerbations",
+        has_abstract=True,
+    )
+    assert "Randomized controlled trial (B · Moderate)" in summary
+    assert "comparing the inhaled therapy with placebo" in summary
+    assert any(b.startswith("Design:") for b in bullets)
+    assert any("n = 512" in b for b in bullets)
+    assert any(b.startswith("Compared:") for b in bullets)
+
+
+def test_compose_summary_none_without_abstract():
+    summary, _ = evidence_rules.compose_summary(
+        study_design=StudyDesign.unclear,
+        evidence_level=EvidenceLevel.unclear,
+        evidence_label="Unclear",
+        population=None,
+        intervention_or_exposure=None,
+        comparator=None,
+        primary_outcome=None,
+        sample_size=None,
+        key_finding=None,
+        has_abstract=False,
+    )
+    assert summary is None

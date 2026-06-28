@@ -81,9 +81,11 @@ def test_search_endpoint(monkeypatch):
     from app.schemas.evidence import ArticleSummary, EvidenceLevel, StudyDesign
     from app.services import evidence_service
 
-    def fake_search(query, max_results=20):
+    def fake_search(query, source="europepmc", max_results=20):
         return [
             ArticleSummary(
+                source="pubmed",
+                article_id="111",
                 pmid="111",
                 title="A meta-analysis",
                 study_design=StudyDesign.meta_analysis,
@@ -98,7 +100,7 @@ def test_search_endpoint(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["count"] == 1
-    assert data["results"][0]["pmid"] == "111"
+    assert data["results"][0]["article_id"] == "111"
     assert data["results"][0]["evidence_level"] == "A"
 
 
@@ -123,7 +125,14 @@ def test_analyze_includes_metadata_and_prefers_pubtype(monkeypatch):
             "keywords": ["asthma"],
         }
 
+    from app.services import unpaywall_service
+
     monkeypatch.setattr(pubmed_service, "fetch_article", fake_fetch)
+    monkeypatch.setattr(
+        unpaywall_service,
+        "find_open_access",
+        lambda doi: {"is_open_access": True, "oa_url": "https://oa.example/x.pdf"},
+    )
     data = client.get("/api/evidence/article/999").json()
     assert data["authors"] == ["Smith J"]
     assert data["doi"] == "10.1/x"
@@ -132,3 +141,61 @@ def test_analyze_includes_metadata_and_prefers_pubtype(monkeypatch):
     # design comes from the PubMed publication type, not the (signal-free) text
     assert data["study_design"] == "meta_analysis"
     assert data["evidence_level"] == "A"
+    assert data["is_open_access"] is True
+    assert data["oa_url"] == "https://oa.example/x.pdf"
+    assert data["key_points_summary"]
+
+
+def test_analyze_europepmc_source(monkeypatch):
+    from app.services import europepmc_service
+
+    def fake_fetch(article_id):
+        return {
+            "article_id": article_id,
+            "source_database": "europepmc",
+            "title": "Coffee and longevity",
+            "abstract": "In this prospective cohort study we followed 8000 adults for 10 years.",
+            "abstract_sections": {},
+            "authors": ["A B"],
+            "journal": "J Epi",
+            "year": "2020",
+            "doi": None,
+            "publication_types": [],
+            "keywords": [],
+            "is_preprint": False,
+        }
+
+    monkeypatch.setattr(europepmc_service, "fetch_article", fake_fetch)
+    response = client.post("/api/evidence/analyze", json={"source": "europepmc", "article_id": "MED/123"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source_database"] == "europepmc"
+    assert data["study_design"] == "cohort"
+
+
+def test_search_dispatches_to_source(monkeypatch):
+    from app.services import europepmc_service
+
+    monkeypatch.setattr(
+        europepmc_service,
+        "search_articles",
+        lambda q, max_results=20: [
+            {
+                "source": "europepmc",
+                "article_id": "PPR/1",
+                "pmid": None,
+                "title": "A medRxiv preprint",
+                "authors": [],
+                "journal": "medRxiv",
+                "year": "2024",
+                "publication_types": ["Preprint"],
+                "doi": None,
+                "is_preprint": True,
+                "is_open_access": True,
+            }
+        ],
+    )
+    data = client.get("/api/search?q=covid&source=europepmc").json()
+    assert data["results"][0]["source"] == "europepmc"
+    assert data["results"][0]["article_id"] == "PPR/1"
+    assert data["results"][0]["is_preprint"] is True
