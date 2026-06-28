@@ -6,9 +6,14 @@ The route handler stays thin; all business logic lives here and in
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, List
 
-from app.schemas.evidence import AnalyzeRequest, EvidenceAnalysis, ExtractionMethod
+from app.schemas.evidence import (
+    AnalyzeRequest,
+    ArticleSummary,
+    EvidenceAnalysis,
+    ExtractionMethod,
+)
 from app.services import evidence_rules, pubmed_service
 
 
@@ -40,8 +45,9 @@ def analyze_text(article: Dict) -> EvidenceAnalysis:
     sections = article.get("abstract_sections") or {}
     combined = f"{title}. {abstract}".strip()
     has_abstract = bool(abstract.strip())
+    pub_types = article.get("publication_types") or []
 
-    design_result = evidence_rules.classify_study_design(combined)
+    design_result = evidence_rules.classify_study_design_combined(combined, pub_types)
     question_type = evidence_rules.detect_question_type(combined)
     sample_size = evidence_rules.extract_sample_size(abstract or combined)
     pico = evidence_rules.extract_pico_hints(abstract or combined)
@@ -59,6 +65,13 @@ def analyze_text(article: Dict) -> EvidenceAnalysis:
         source_database=article.get("source_database", "pubmed"),
         title=article.get("title"),
         abstract=article.get("abstract"),
+        authors=article.get("authors") or [],
+        journal=article.get("journal"),
+        year=article.get("year"),
+        citation=article.get("citation"),
+        doi=article.get("doi"),
+        publication_types=pub_types,
+        keywords=article.get("keywords") or [],
         study_design=design_result.design,
         study_design_confidence=design_result.confidence,
         study_design_evidence=design_result.matched_phrase,
@@ -75,3 +88,27 @@ def analyze_text(article: Dict) -> EvidenceAnalysis:
         caution_notes=cautions,
         extraction_method=ExtractionMethod.rules,
     )
+
+
+def search(query: str, max_results: int = 20) -> List[ArticleSummary]:
+    """Search PubMed and attach a provisional design/level hint to each result."""
+    rows = pubmed_service.search_articles(query, max_results=max_results)
+    summaries: List[ArticleSummary] = []
+    for row in rows:
+        design = evidence_rules.classify_from_publication_types(row.get("publication_types"))
+        level, label = evidence_rules.map_evidence_level(design.design)
+        summaries.append(
+            ArticleSummary(
+                pmid=row["pmid"],
+                title=row.get("title"),
+                authors=row.get("authors") or [],
+                journal=row.get("journal"),
+                year=row.get("year"),
+                publication_types=row.get("publication_types") or [],
+                doi=row.get("doi"),
+                study_design=design.design,
+                evidence_level=level,
+                evidence_label=label,
+            )
+        )
+    return summaries

@@ -75,3 +75,60 @@ def test_index_page_served():
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "Clinical Evidence Assistant" in response.text
+
+
+def test_search_endpoint(monkeypatch):
+    from app.schemas.evidence import ArticleSummary, EvidenceLevel, StudyDesign
+    from app.services import evidence_service
+
+    def fake_search(query, max_results=20):
+        return [
+            ArticleSummary(
+                pmid="111",
+                title="A meta-analysis",
+                study_design=StudyDesign.meta_analysis,
+                evidence_level=EvidenceLevel.a,
+                evidence_label="High",
+                publication_types=["Meta-Analysis"],
+            )
+        ]
+
+    monkeypatch.setattr(evidence_service, "search", fake_search)
+    response = client.get("/api/search?q=statins")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 1
+    assert data["results"][0]["pmid"] == "111"
+    assert data["results"][0]["evidence_level"] == "A"
+
+
+def test_search_requires_query():
+    assert client.get("/api/search").status_code == 422
+
+
+def test_analyze_includes_metadata_and_prefers_pubtype(monkeypatch):
+    def fake_fetch(pmid):
+        return {
+            "article_id": pmid,
+            "source_database": "pubmed",
+            "title": "Some study",
+            "abstract": "We studied 100 adults.",
+            "abstract_sections": {},
+            "authors": ["Smith J"],
+            "journal": "J Tests",
+            "year": "2020",
+            "citation": "J Tests. 2020;1(1):1-10",
+            "doi": "10.1/x",
+            "publication_types": ["Meta-Analysis"],
+            "keywords": ["asthma"],
+        }
+
+    monkeypatch.setattr(pubmed_service, "fetch_article", fake_fetch)
+    data = client.get("/api/evidence/article/999").json()
+    assert data["authors"] == ["Smith J"]
+    assert data["doi"] == "10.1/x"
+    assert data["publication_types"] == ["Meta-Analysis"]
+    assert data["keywords"] == ["asthma"]
+    # design comes from the PubMed publication type, not the (signal-free) text
+    assert data["study_design"] == "meta_analysis"
+    assert data["evidence_level"] == "A"

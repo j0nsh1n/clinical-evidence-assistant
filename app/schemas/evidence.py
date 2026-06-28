@@ -92,6 +92,15 @@ class EvidenceAnalysis(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
 
+    # --- article metadata ---
+    authors: List[str] = Field(default_factory=list)
+    journal: Optional[str] = None
+    year: Optional[str] = None
+    citation: Optional[str] = None
+    doi: Optional[str] = None
+    publication_types: List[str] = Field(default_factory=list)
+    keywords: List[str] = Field(default_factory=list)
+
     # --- structured extraction ---
     study_design: StudyDesign = StudyDesign.unclear
     study_design_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
@@ -116,3 +125,29 @@ class EvidenceAnalysis(BaseModel):
     # --- meta ---
     extraction_method: ExtractionMethod = ExtractionMethod.rules
     analyzed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class ArticleSummary(BaseModel):
+    """One row in a search result list (lightweight; no abstract).
+
+    Carries a *provisional* design/level hint derived cheaply from PubMed
+    publication types, so the list conveys evidence strength at a glance without
+    a full per-article analysis.
+    """
+
+    pmid: str
+    title: Optional[str] = None
+    authors: List[str] = Field(default_factory=list)
+    journal: Optional[str] = None
+    year: Optional[str] = None
+    publication_types: List[str] = Field(default_factory=list)
+    doi: Optional[str] = None
+    study_design: StudyDesign = StudyDesign.unclear
+    evidence_level: EvidenceLevel = EvidenceLevel.unclear
+    evidence_label: str = "Unclear"
+
+
+class SearchResponse(BaseModel):
+    query: str
+    count: int
+    results: List[ArticleSummary] = Field(default_factory=list)

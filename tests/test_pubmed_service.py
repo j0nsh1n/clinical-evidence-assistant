@@ -67,3 +67,45 @@ def test_fetch_article_transport_error_raises_pubmed_error(monkeypatch):
     monkeypatch.setattr(pubmed_service.Entrez, "efetch", boom)
     with pytest.raises(PubMedError):
         pubmed_service.fetch_article("123")
+
+
+def test_parse_summary_extracts_fields():
+    docsum = {
+        "Id": "123",
+        "Title": "A trial of X.",
+        "AuthorList": ["Smith J", "Doe A"],
+        "FullJournalName": "Journal of Tests",
+        "Source": "J Tests",
+        "PubDate": "2020 Jan 15",
+        "PubTypeList": ["Journal Article", "Randomized Controlled Trial"],
+        "DOI": "10.1000/xyz",
+    }
+    row = pubmed_service._parse_summary(docsum)
+    assert row["pmid"] == "123"
+    assert row["year"] == "2020"
+    assert row["authors"] == ["Smith J", "Doe A"]
+    assert row["journal"] == "Journal of Tests"
+    assert "Randomized Controlled Trial" in row["publication_types"]
+    assert "Journal Article" not in row["publication_types"]
+    assert row["doi"] == "10.1000/xyz"
+
+
+def test_search_articles_empty_query_returns_empty():
+    assert pubmed_service.search_articles("   ") == []
+
+
+def test_search_articles_pipeline(monkeypatch):
+    monkeypatch.setattr(pubmed_service, "search", lambda q, max_results=20: ["111", "222"])
+    monkeypatch.setattr(pubmed_service.Entrez, "esummary", lambda **kw: _Handle())
+    monkeypatch.setattr(
+        pubmed_service.Entrez,
+        "read",
+        lambda handle: [
+            {"Id": "111", "Title": "A", "PubTypeList": ["Meta-Analysis"], "PubDate": "2019"},
+            {"Id": "222", "Title": "B", "PubTypeList": ["Journal Article"], "PubDate": "2021"},
+        ],
+    )
+    rows = pubmed_service.search_articles("anything")
+    assert [r["pmid"] for r in rows] == ["111", "222"]
+    assert rows[0]["publication_types"] == ["Meta-Analysis"]
+    assert rows[1]["publication_types"] == []

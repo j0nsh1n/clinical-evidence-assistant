@@ -1,9 +1,9 @@
 # Clinical Evidence Assistant
 
-A small FastAPI service that takes a clinical research article (by PubMed ID or by
-pasted abstract), extracts key study details, and assigns a **provisional**
-evidence level — to help students interpret study design, findings, and evidence
-strength from PubMed abstracts.
+A small FastAPI app that lets you **search PubMed**, open any article, and get a
+**provisional** evidence level plus structured study details — to help students
+interpret study design, findings, and evidence strength. You can also analyze an
+article directly by PubMed ID or by pasting an abstract.
 
 > ⚠️ **Not medical advice.** Evidence levels are estimated from the *abstract
 > only* using transparent rules, not a full critical appraisal. Output is a
@@ -13,14 +13,16 @@ strength from PubMed abstracts.
 
 ## Feature spec (Phase 1)
 
-**Input** — one article, supplied as either:
-- a PubMed `pmid` (the abstract is fetched via NCBI E-utilities), or
+**Input** — a PubMed **search query**, or one article supplied as either:
+- a PubMed `pmid` (the abstract + metadata are fetched via NCBI E-utilities), or
 - `title` + `abstract` text directly.
 
 **Output** — a structured `EvidenceAnalysis` (JSON): study design, clinical
 question type, population, sample size, PICO hints, key finding, a provisional
-A/B/C/D evidence level with a human label, a confidence score, caution notes, and
-the extraction method used.
+A/B/C/D evidence level with a human label, a confidence score, caution notes, the
+extraction method, and article metadata (authors, journal, citation, DOI, PubMed
+publication types, MeSH topics). Search returns lightweight summaries, each with
+an evidence-level hint from its publication type.
 
 **MVP** — single-article, abstract-based, rule-driven analysis behind one
 endpoint, with graceful handling of missing abstracts and unknown designs.
@@ -36,20 +38,19 @@ refinement pass and a multi-article comparison view are planned later.
 ```
 clinical-evidence-assistant/
 ├── app/
-│   ├── main.py                  # FastAPI app + /health
+│   ├── main.py                  # FastAPI app + /health + serves the web UI
 │   ├── config.py                # settings (NCBI email/key) via pydantic-settings
 │   ├── routers/
-│   │   └── evidence.py          # POST /api/evidence/analyze, GET /api/evidence/article/{pmid}
+│   │   ├── evidence.py          # POST /api/evidence/analyze, GET /api/evidence/article/{pmid}
+│   │   └── search.py            # GET /api/search?q=...
 │   ├── schemas/
-│   │   └── evidence.py          # Pydantic data model (the stable contract)
-│   └── services/
-│       ├── pubmed_service.py    # ESearch/EFetch, normalize + preserve abstract sections
-│       ├── evidence_rules.py    # pure functions: design, sample size, PICO, mapping, cautions
-│       └── evidence_service.py  # orchestration: fetch -> extract -> assemble
-└── tests/
-    ├── fixtures/sample_abstracts.py   # labelled eval seed (synthetic)
-    ├── test_evidence_rules.py
-    └── test_evidence_api.py
+│   │   └── evidence.py          # Pydantic models (the stable contract)
+│   ├── services/
+│   │   ├── pubmed_service.py    # ESearch/EFetch/ESummary, metadata + abstract sections
+│   │   ├── evidence_rules.py    # pure functions: design (text + pub-type), PICO, mapping, cautions
+│   │   └── evidence_service.py  # orchestration: search / fetch -> extract -> assemble
+│   └── static/                  # single-page web UI (index.html, style.css, app.js)
+└── tests/                       # 53 tests (rules, PubMed layer, API; PubMed mocked)
 ```
 
 Design principle: **thin routes, logic in services, rules pure and testable.**
@@ -88,7 +89,7 @@ pip install -r requirements.txt
 cp .env.example .env            # then set NCBI_EMAIL (required by NCBI)
 
 uvicorn app.main:app --reload
-# open http://127.0.0.1:8000/docs  for interactive API docs
+# open http://127.0.0.1:8000/      for the web app  (/docs for the API)
 ```
 
 ### Try it
@@ -101,6 +102,9 @@ curl -X POST http://127.0.0.1:8000/api/evidence/analyze \
 
 # Analyze a real PubMed article by PMID
 curl http://127.0.0.1:8000/api/evidence/article/33301246
+
+# Search PubMed (returns summaries with evidence-level hints)
+curl "http://127.0.0.1:8000/api/search?q=statins+cardiovascular+mortality"
 ```
 
 ## Tests

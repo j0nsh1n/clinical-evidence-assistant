@@ -67,6 +67,41 @@ def classify_study_design(text: str) -> StudyDesignResult:
     return StudyDesignResult(design=StudyDesign.unclear, confidence=0.0, matched_phrase=None)
 
 
+# Map authoritative PubMed publication types to a study design. Ordered so that
+# synthesis types are checked before the generic "review".
+_PUBTYPE_DESIGN: List[Tuple[str, StudyDesign, float]] = [
+    ("meta-analysis", StudyDesign.meta_analysis, 0.97),
+    ("systematic review", StudyDesign.systematic_review, 0.97),
+    ("randomized controlled trial", StudyDesign.randomized_controlled_trial, 0.95),
+    ("case reports", StudyDesign.case_report, 0.9),
+    ("review", StudyDesign.narrative_review, 0.6),
+    ("editorial", StudyDesign.expert_opinion, 0.55),
+]
+
+
+def classify_from_publication_types(pub_types: Optional[List[str]]) -> StudyDesignResult:
+    """Classify design from PubMed's own publication-type tags (authoritative)."""
+    types_low = [str(p).lower() for p in (pub_types or [])]
+    for key, design, confidence in _PUBTYPE_DESIGN:
+        if any(key in t for t in types_low):
+            return StudyDesignResult(
+                design=design, confidence=confidence, matched_phrase=f"PubMed type: {key}"
+            )
+    return StudyDesignResult(design=StudyDesign.unclear, confidence=0.0, matched_phrase=None)
+
+
+def classify_study_design_combined(
+    text: str, pub_types: Optional[List[str]] = None
+) -> StudyDesignResult:
+    """Prefer PubMed publication types when they give a confident design;
+    otherwise fall back to the text-based classifier."""
+    if pub_types:
+        by_type = classify_from_publication_types(pub_types)
+        if by_type.design != StudyDesign.unclear:
+            return by_type
+    return classify_study_design(text)
+
+
 # ---------------------------------------------------------------------------
 # Clinical question type
 # ---------------------------------------------------------------------------

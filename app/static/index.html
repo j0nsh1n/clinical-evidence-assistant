@@ -20,11 +20,22 @@
 
       <section class="panel input-panel">
         <div class="tabs" role="tablist">
-          <button class="tab is-active" data-mode="pmid" role="tab" type="button">By PubMed ID</button>
+          <button class="tab is-active" data-mode="search" role="tab" type="button">Search</button>
+          <button class="tab" data-mode="pmid" role="tab" type="button">By PubMed ID</button>
           <button class="tab" data-mode="text" role="tab" type="button">Paste abstract</button>
         </div>
 
-        <form id="form-pmid" class="mode" data-mode="pmid">
+        <form id="form-search" class="mode" data-mode="search">
+          <label for="query">Search PubMed</label>
+          <div class="row">
+            <input id="query" name="query" type="text"
+                   placeholder="e.g. statins cardiovascular mortality" autocomplete="off" />
+            <button type="submit" class="btn primary">Search</button>
+          </div>
+          <p class="hint">Searches PubMed and lists matching articles — click Analyze on any result.</p>
+        </form>
+
+        <form id="form-pmid" class="mode is-hidden" data-mode="pmid">
           <label for="pmid">PubMed ID (PMID)</label>
           <div class="row">
             <input id="pmid" name="pmid" type="text" inputmode="numeric"
@@ -48,6 +59,7 @@
       </section>
 
       <section id="status" class="status is-hidden" aria-live="polite"></section>
+      <section id="results" class="results is-hidden" aria-live="polite"></section>
       <section id="result" class="panel result is-hidden" aria-live="polite"></section>
 
       <footer class="site-footer">

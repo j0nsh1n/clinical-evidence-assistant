@@ -105,3 +105,31 @@ def test_pico_risk_factor_exposure_excludes_leading_verb():
 def test_pico_population_at_end_of_text():
     hints = evidence_rules.extract_pico_hints("We enrolled 88 adults with chronic pain")
     assert hints["population"] == "88 adults with chronic pain"
+
+
+def test_classify_from_publication_types_rct():
+    result = evidence_rules.classify_from_publication_types(
+        ["Journal Article", "Randomized Controlled Trial"]
+    )
+    assert result.design == StudyDesign.randomized_controlled_trial
+    assert result.confidence >= 0.9
+
+
+def test_classify_from_publication_types_synthesis_beats_review():
+    result = evidence_rules.classify_from_publication_types(["Systematic Review", "Review"])
+    assert result.design == StudyDesign.systematic_review
+
+
+def test_combined_prefers_publication_type_over_text():
+    # Text reads "cohort", but PubMed tags it an RCT -> trust the authoritative tag.
+    result = evidence_rules.classify_study_design_combined(
+        "a prospective cohort of patients", ["Randomized Controlled Trial"]
+    )
+    assert result.design == StudyDesign.randomized_controlled_trial
+
+
+def test_combined_falls_back_to_text_when_pubtype_uninformative():
+    result = evidence_rules.classify_study_design_combined(
+        "a prospective cohort study of adults", ["Journal Article"]
+    )
+    assert result.design == StudyDesign.cohort
