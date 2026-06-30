@@ -15,7 +15,13 @@ from app.schemas.evidence import (
     EvidenceAnalysis,
     ExtractionMethod,
 )
-from app.services import europepmc_service, evidence_rules, pubmed_service, unpaywall_service
+from app.services import (
+    europepmc_service,
+    evidence_rules,
+    llm_service,
+    pubmed_service,
+    unpaywall_service,
+)
 
 # Pluggable article sources. Each exposes search_articles() and fetch_article().
 SOURCES = {
@@ -44,7 +50,7 @@ def analyze_article(request: AnalyzeRequest) -> EvidenceAnalysis:
             raise ValueError(f"Unknown source '{request.resolved_source()}'.")
         article = fetcher.fetch_article(article_id)
 
-    return analyze_text(article)
+    return analyze_text(article, use_llm=request.use_llm)
 
 
 def _resolve_open_access(article: Dict) -> Dict[str, Optional[str]]:
@@ -58,7 +64,7 @@ def _resolve_open_access(article: Dict) -> Dict[str, Optional[str]]:
     return {"is_open_access": is_oa, "oa_url": oa_url}
 
 
-def analyze_text(article: Dict) -> EvidenceAnalysis:
+def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
     """Run the rule pipeline over a normalized article dict."""
     title = article.get("title") or ""
     abstract = article.get("abstract") or ""
@@ -92,6 +98,34 @@ def analyze_text(article: Dict) -> EvidenceAnalysis:
 
     oa = _resolve_open_access(article)
 
+    limitations = None
+    method = ExtractionMethod.rules
+    if use_llm:
+        if not abstract.strip():
+            raise ValueError("Cannot refine without an abstract.")
+        if not llm_service.is_configured():
+            raise ValueError("AI refinement is not configured. Set ANTHROPIC_API_KEY to enable it.")
+        try:
+            refined = llm_service.refine(
+                {
+                    "title": article.get("title"),
+                    "abstract": abstract,
+                    "study_design": design_result.design.value,
+                    "evidence_level": level.value,
+                    "sample_size": sample_size,
+                    "population": pico["population"],
+                    "intervention": pico["intervention_or_exposure"],
+                    "comparator": pico["comparator"],
+                    "primary_outcome": pico["primary_outcome"],
+                }
+            )
+            summary = refined["summary"] or summary
+            bullets = refined["key_points"] or bullets
+            limitations = refined["limitations"]
+            method = ExtractionMethod.rules_llm
+        except llm_service.LLMError:
+            cautions.append("AI refinement was unavailable; showing the rule-based summary.")
+
     extractable = (sample_size, key_finding, pico["population"])
     completeness = sum(value is not None for value in extractable) / len(extractable)
     confidence = round(0.7 * design_result.confidence + 0.3 * completeness, 2)
@@ -121,13 +155,14 @@ def analyze_text(article: Dict) -> EvidenceAnalysis:
         comparator=pico["comparator"],
         primary_outcome=pico["primary_outcome"],
         key_finding=key_finding,
+        limitations=limitations,
         key_points_summary=summary,
         key_points=bullets,
         evidence_level=level,
         evidence_label=label,
         confidence_score=confidence,
         caution_notes=cautions,
-        extraction_method=ExtractionMethod.rules,
+        extraction_method=method,
     )
 
 

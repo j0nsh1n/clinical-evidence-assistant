@@ -199,3 +199,57 @@ def test_search_dispatches_to_source(monkeypatch):
     assert data["results"][0]["source"] == "europepmc"
     assert data["results"][0]["article_id"] == "PPR/1"
     assert data["results"][0]["is_preprint"] is True
+
+
+_RCT_ABSTRACT = (
+    "In this randomized, double-blind, placebo-controlled trial, 320 patients were enrolled. "
+    "The primary outcome was symptom improvement at 12 weeks."
+)
+
+
+def test_refine_not_configured_returns_422(monkeypatch):
+    from app.services import llm_service
+
+    monkeypatch.setattr(llm_service, "is_configured", lambda: False)
+    response = client.post(
+        "/api/evidence/analyze", json={"title": "An RCT", "abstract": _RCT_ABSTRACT, "use_llm": True}
+    )
+    assert response.status_code == 422
+    assert "not configured" in response.json()["detail"].lower()
+
+
+def test_refine_with_llm_mocked(monkeypatch):
+    from app.services import llm_service
+
+    monkeypatch.setattr(llm_service, "is_configured", lambda: True)
+    monkeypatch.setattr(
+        llm_service,
+        "refine",
+        lambda article: {"summary": "AI summary.", "limitations": "Small sample.", "key_points": ["Point A", "Point B"]},
+    )
+    data = client.post(
+        "/api/evidence/analyze", json={"title": "An RCT", "abstract": _RCT_ABSTRACT, "use_llm": True}
+    ).json()
+    assert data["extraction_method"] == "rules+llm"
+    assert data["key_points_summary"] == "AI summary."
+    assert data["limitations"] == "Small sample."
+    assert data["key_points"] == ["Point A", "Point B"]
+    # the rule-based evidence level must be untouched by the LLM
+    assert data["study_design"] == "randomized_controlled_trial"
+    assert data["evidence_level"] == "B"
+
+
+def test_refine_llm_error_falls_back(monkeypatch):
+    from app.services import llm_service
+
+    monkeypatch.setattr(llm_service, "is_configured", lambda: True)
+
+    def boom(article):
+        raise llm_service.LLMError("boom")
+
+    monkeypatch.setattr(llm_service, "refine", boom)
+    data = client.post(
+        "/api/evidence/analyze", json={"title": "An RCT", "abstract": _RCT_ABSTRACT, "use_llm": True}
+    ).json()
+    assert data["extraction_method"] == "rules"
+    assert any("AI refinement was unavailable" in c for c in data["caution_notes"])

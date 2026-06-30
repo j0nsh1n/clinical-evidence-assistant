@@ -158,8 +158,8 @@ Shipped in **1.0**:
 - [x] Rule-based **key-points summary**; publication-type-aware design classification
 - [x] Web UI ("Heimr"): **dark mode** (system + toggle), source selector, **metric definitions + glossary**
 - [x] **Accuracy benchmark** — 26 labelled abstracts (88% design / 92% level / 100% sample-size)
+- [x] Optional **LLM refinement** — "Refine with AI" rewrites the summary + limitations (`rules+llm`, Claude Sonnet 4.6); the evidence level stays rule-based. Needs `ANTHROPIC_API_KEY`.
 
 Planned:
-- [ ] Optional **LLM refinement** of summaries/limitations (`extraction_method="rules+llm"`)
 - [ ] **ClinicalTrials.gov** trial-record tab
 - [ ] **Multi-article comparison** view

@@ -9,6 +9,7 @@ const enc = (s) => encodeURIComponent(String(s == null ? "" : s));
 const statusEl = $("#status");
 const resultsEl = $("#results");
 const resultEl = $("#result");
+let lastAnalysis = null;
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -40,6 +41,8 @@ const GLOSSARY = {
   preprint: "A paper posted before peer review (e.g. medRxiv/bioRxiv). Findings are unverified — treat with extra caution.",
   open_access:
     "A free, legal full-text copy is available (found via Unpaywall or PubMed Central). We never link to pirated copies.",
+  limitations:
+    "Caveats about the study's design or methods that temper its conclusions — shown when you refine the summary with AI.",
 };
 
 // --- theme (light / dark / system) ---
@@ -164,8 +167,8 @@ $("#form-text").addEventListener("submit", (e) => {
   analyze({ title: $("#title").value.trim() || null, abstract });
 });
 
-async function analyze(payload) {
-  setBusy(true, "Analyzing…");
+async function analyze(payload, busyMsg) {
+  setBusy(true, busyMsg || "Analyzing…");
   try {
     const res = await fetch("/api/evidence/analyze", {
       method: "POST",
@@ -194,6 +197,7 @@ function friendlyError(err) {
 // --- render the evidence card ---
 function render(d) {
   hide(statusEl);
+  lastAnalysis = d;
   const level = d.evidence_level || "unclear";
   const lvlClass = `lvl-${String(level).toLowerCase()}`;
   const conf = Math.round((d.confidence_score || 0) * 100);
@@ -223,6 +227,7 @@ function render(d) {
     </div>
 
     ${keyPoints(d)}
+    ${refineControl(d)}
 
     <div class="fields">
       ${field("Sample size", d.sample_size != null ? `n = ${Number(d.sample_size).toLocaleString()}` : null, "sample_size", true)}
@@ -233,6 +238,7 @@ function render(d) {
 
     ${block("Key finding", d.key_finding, "key_finding")}
     ${block("Primary outcome", d.primary_outcome, "outcome")}
+    ${block("Limitations", d.limitations, "limitations")}
     ${articleDetails(d)}
 
     ${
@@ -252,7 +258,26 @@ function render(d) {
     ${glossary()}
   `;
   show(resultEl);
+  const refineBtn = $("#btn-refine", resultEl);
+  if (refineBtn) refineBtn.addEventListener("click", refineWithAI);
   resultEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function refineControl(d) {
+  if (d.extraction_method === "rules+llm") {
+    return `<p class="ai-tag">Summary refined by AI · ${escapeHtml(d.extraction_method)}</p>`;
+  }
+  return `<div class="refine-row"><button id="btn-refine" class="btn ghost small" type="button">Refine with AI</button><span class="refine-hint">Rewrites the summary and limitations with Claude (needs an API key in .env).</span></div>`;
+}
+
+function refineWithAI() {
+  const d = lastAnalysis;
+  if (!d) return;
+  const fromSource = (d.source_database === "pubmed" || d.source_database === "europepmc") && d.article_id;
+  const payload = fromSource
+    ? { source: d.source_database, article_id: d.article_id, use_llm: true }
+    : { title: d.title || null, abstract: d.abstract || null, use_llm: true };
+  analyze(payload, "Refining with AI…");
 }
 
 function sourceLink(d) {
@@ -334,6 +359,7 @@ function glossary() {
     ["key_finding", "Key finding"],
     ["confidence", "Confidence"],
     ["caution_notes", "Cautions"],
+    ["limitations", "Limitations"],
     ["preprint", "Preprint"],
     ["open_access", "Open access"],
   ];

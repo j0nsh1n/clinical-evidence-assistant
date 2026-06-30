@@ -185,6 +185,9 @@ select { width: auto; flex-shrink: 0; cursor: pointer; }
 .keypoints ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
 .keypoints li { font-size: 0.85rem; }
 .keypoints li b { font-weight: 500; }
+.refine-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 18px; }
+.refine-hint { font-size: 0.8rem; color: var(--muted); }
+.ai-tag { font-size: 0.78rem; color: var(--accent); font-weight: 500; margin: 0 0 18px; }
 
 /* fields, blocks */
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 18px; }

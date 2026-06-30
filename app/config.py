@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     ncbi_api_key: Optional[str] = None
     ncbi_timeout_seconds: int = 30
 
+    # Optional LLM refinement (Phase 8). When ANTHROPIC_API_KEY is unset, the app
+    # falls back to the rules-based summary.
+    anthropic_api_key: Optional[str] = None
+    llm_model: str = "claude-sonnet-4-6"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -69,6 +69,7 @@ class AnalyzeRequest(BaseModel):
     pmid: Optional[str] = Field(default=None, description="PubMed ID (shorthand for source='pubmed').")
     title: Optional[str] = Field(default=None, description="Article title, if supplying text directly.")
     abstract: Optional[str] = Field(default=None, description="Abstract text, if supplying text directly.")
+    use_llm: bool = Field(default=False, description="Refine the summary/limitations with the LLM (rules+llm).")
 
     def has_inline_text(self) -> bool:
         return bool(self.abstract and self.abstract.strip())

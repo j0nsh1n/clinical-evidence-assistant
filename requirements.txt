@@ -4,6 +4,7 @@ pydantic>=2.6
 pydantic-settings>=2.2
 biopython>=1.83
 httpx>=0.27
+anthropic>=0.49        # optional — only needed for the LLM 'Refine with AI' feature
 
 # Testing
 pytest>=8.0
