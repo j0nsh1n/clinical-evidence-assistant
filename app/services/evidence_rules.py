@@ -39,7 +39,11 @@ _DESIGN_PATTERNS: List[Tuple[StudyDesign, float, List[str]]] = [
             r"placebo[-\s]?controlled",
         ],
     ),
-    (StudyDesign.randomized_controlled_trial, 0.7, [r"randomi[sz]ed", r"double[-\s]?blind"]),
+    (
+        StudyDesign.randomized_controlled_trial,
+        0.7,
+        [r"randomi[sz]ed", r"double[-\s]?blind", r"\brandomly\s+(?:assigned|allocated)\b"],
+    ),
     (
         StudyDesign.cohort,
         0.85,
