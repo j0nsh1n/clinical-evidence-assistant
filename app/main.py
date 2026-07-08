@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
-from app.routers import evidence, search
+from app.routers import evidence, history, llm, search, trials
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -27,7 +27,10 @@ app = FastAPI(
 )
 
 app.include_router(evidence.router)
+app.include_router(history.router)
+app.include_router(llm.router)
 app.include_router(search.router)
+app.include_router(trials.router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

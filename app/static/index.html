@@ -42,6 +42,8 @@
           <button class="tab is-active" data-mode="search" role="tab" type="button">Search</button>
           <button class="tab" data-mode="pmid" role="tab" type="button">By PubMed ID</button>
           <button class="tab" data-mode="text" role="tab" type="button">Paste abstract</button>
+          <button class="tab" data-mode="trials" role="tab" type="button">Trials</button>
+          <button class="tab" data-mode="library" role="tab" type="button">Library</button>
         </div>
 
         <form id="form-search" class="mode" data-mode="search">
@@ -78,11 +80,38 @@
             <button type="button" class="btn ghost" id="btn-example">Try an example</button>
             <button type="submit" class="btn primary">Analyze</button>
           </div>
+          <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Analyze an article PDF">
+            <span class="dz-main">…or drop an article PDF here (or click to choose)</span>
+            <span class="dz-hint">Read locally — the file never leaves this computer. Scanned PDFs without a text layer won't work.</span>
+          </div>
+          <input id="pdf-input" type="file" accept="application/pdf,.pdf" hidden />
         </form>
+
+        <form id="form-trials" class="mode is-hidden" data-mode="trials">
+          <label for="trial-q">Search ClinicalTrials.gov</label>
+          <div class="row">
+            <input id="trial-q" name="trial-q" type="text"
+                   placeholder="e.g. semaglutide heart failure" autocomplete="off" />
+            <button type="submit" class="btn primary">Search</button>
+          </div>
+          <p class="hint">Registered trial records (status, phase, enrollment) — not journal articles, and not graded on the A–D evidence scale.</p>
+        </form>
+
+        <div class="mode is-hidden" data-mode="library" id="library-panel" aria-live="polite">
+          <p class="hint">Every analyzed article is saved here automatically, with room for your own appraisal notes.</p>
+          <div id="library-list"></div>
+        </div>
       </section>
 
       <section id="status" class="status is-hidden" aria-live="polite"></section>
       <section id="results" class="results is-hidden" aria-live="polite"></section>
+      <div id="compare-bar" class="compare-bar is-hidden" aria-live="polite">
+        <span id="cmp-count" class="cmp-count"></span>
+        <div class="cmp-actions">
+          <button id="cmp-clear" class="btn ghost small" type="button">Clear</button>
+          <button id="cmp-go" class="btn primary small" type="button">Compare selected</button>
+        </div>
+      </div>
       <section id="result" class="panel result is-hidden" aria-live="polite"></section>
 
       <footer class="site-footer">

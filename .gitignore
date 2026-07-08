@@ -11,3 +11,10 @@ env/
 .DS_Store
 .idea/
 .vscode/
+
+# runtime state (local reading-list DB)
+data/
+
+# local-only handoff / agent instructions (never committed)
+CONTEXT.md
+CLAUDE.md

@@ -12,14 +12,17 @@ from typing import Dict, List, Optional
 from app.schemas.evidence import (
     AnalyzeRequest,
     ArticleSummary,
+    CompareItem,
     EvidenceAnalysis,
     ExtractionMethod,
 )
 from app.services import (
     europepmc_service,
     evidence_rules,
+    history_service,
     llm_service,
     pubmed_service,
+    retraction_service,
     unpaywall_service,
 )
 
@@ -50,7 +53,9 @@ def analyze_article(request: AnalyzeRequest) -> EvidenceAnalysis:
             raise ValueError(f"Unknown source '{request.resolved_source()}'.")
         article = fetcher.fetch_article(article_id)
 
-    return analyze_text(article, use_llm=request.use_llm)
+    analysis = analyze_text(article, use_llm=request.use_llm)
+    history_service.save(analysis)  # best-effort; never raises
+    return analysis
 
 
 def _resolve_open_access(article: Dict) -> Dict[str, Optional[str]]:
@@ -78,10 +83,19 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
     sample_size = evidence_rules.extract_sample_size(abstract or combined)
     pico = evidence_rules.extract_pico_hints(abstract or combined)
     key_finding = evidence_rules.extract_key_finding(abstract, sections)
+    reported_statistics = evidence_rules.extract_statistics(abstract or combined)
     level, label = evidence_rules.map_evidence_level(design_result.design)
     cautions = evidence_rules.build_caution_notes(design_result.design, sample_size, has_abstract)
     if article.get("is_preprint"):
         cautions.insert(0, "Preprint — not yet peer-reviewed.")
+
+    retraction = retraction_service.check_retraction(article.get("doi"), pub_types)
+    if retraction["is_retracted"]:
+        cautions.insert(
+            0,
+            "RETRACTED: this article has been retracted "
+            f"(flagged by {retraction['retraction_source']}). Do not rely on its findings.",
+        )
 
     summary, bullets = evidence_rules.compose_summary(
         study_design=design_result.design,
@@ -104,7 +118,10 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
         if not abstract.strip():
             raise ValueError("Cannot refine without an abstract.")
         if not llm_service.is_configured():
-            raise ValueError("AI refinement is not configured. Set ANTHROPIC_API_KEY to enable it.")
+            raise ValueError(
+                "AI refinement is not configured. Set OLLAMA_MODEL (local) or "
+                "ANTHROPIC_API_KEY to enable it."
+            )
         try:
             refined = llm_service.refine(
                 {
@@ -145,6 +162,8 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
         is_open_access=oa["is_open_access"],
         oa_url=oa["oa_url"],
         is_preprint=bool(article.get("is_preprint")),
+        is_retracted=bool(retraction["is_retracted"]),
+        retraction_source=retraction["retraction_source"],
         study_design=design_result.design,
         study_design_confidence=design_result.confidence,
         study_design_evidence=design_result.matched_phrase,
@@ -155,6 +174,7 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
         comparator=pico["comparator"],
         primary_outcome=pico["primary_outcome"],
         key_finding=key_finding,
+        reported_statistics=reported_statistics,
         limitations=limitations,
         key_points_summary=summary,
         key_points=bullets,
@@ -164,6 +184,14 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
         caution_notes=cautions,
         extraction_method=method,
     )
+
+
+def compare(items: List[CompareItem]) -> List[EvidenceAnalysis]:
+    """Analyze several selected articles for a side-by-side comparison."""
+    return [
+        analyze_article(AnalyzeRequest(source=item.source, article_id=item.article_id))
+        for item in items
+    ]
 
 
 def search(query: str, source: str = DEFAULT_SOURCE, max_results: int = 20) -> List[ArticleSummary]:
@@ -187,6 +215,7 @@ def search(query: str, source: str = DEFAULT_SOURCE, max_results: int = 20) -> L
                 doi=row.get("doi"),
                 is_preprint=bool(row.get("is_preprint")),
                 is_open_access=bool(row.get("is_open_access")),
+                is_retracted=retraction_service.retracted_in_pub_types(row.get("publication_types")),
                 study_design=design.design,
                 evidence_level=level,
                 evidence_label=label,

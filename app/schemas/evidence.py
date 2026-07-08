@@ -92,6 +92,23 @@ class StudyDesignResult(BaseModel):
     )
 
 
+class ReportedStatistic(BaseModel):
+    """One effect estimate found in the abstract, with a templated reading.
+
+    Extraction and interpretation are pure rules (no LLM near the numbers): the
+    reading is assembled from fixed templates so it stays deterministic.
+    """
+
+    measure: str = Field(description="Canonical short measure: HR, OR, RR, or IRR.")
+    label: str = Field(description="Human name, e.g. 'adjusted hazard ratio'.")
+    value: float
+    ci_low: Optional[float] = None
+    ci_high: Optional[float] = None
+    p_value: Optional[str] = Field(default=None, description="As reported, e.g. '<0.001'.")
+    display: str = Field(description="Compact rendering, e.g. 'HR 0.75 (95% CI 0.60–0.94)'.")
+    reading: str = Field(description="Plain-language interpretation from fixed templates.")
+
+
 class EvidenceAnalysis(BaseModel):
     """The full structured result returned to the API/UI."""
 
@@ -112,6 +129,10 @@ class EvidenceAnalysis(BaseModel):
     is_open_access: bool = False
     oa_url: Optional[str] = None
     is_preprint: bool = False
+    is_retracted: bool = False
+    retraction_source: Optional[str] = Field(
+        default=None, description="What flagged the retraction (tag or OpenAlex/Retraction Watch)."
+    )
 
     # --- structured extraction ---
     study_design: StudyDesign = StudyDesign.unclear
@@ -126,6 +147,7 @@ class EvidenceAnalysis(BaseModel):
     comparator: Optional[str] = None
     primary_outcome: Optional[str] = None
     key_finding: Optional[str] = None
+    reported_statistics: List[ReportedStatistic] = Field(default_factory=list)
     limitations: Optional[str] = None
     key_points_summary: Optional[str] = None
     key_points: List[str] = Field(default_factory=list)
@@ -160,6 +182,7 @@ class ArticleSummary(BaseModel):
     doi: Optional[str] = None
     is_preprint: bool = False
     is_open_access: bool = False
+    is_retracted: bool = False
     study_design: StudyDesign = StudyDesign.unclear
     evidence_level: EvidenceLevel = EvidenceLevel.unclear
     evidence_label: str = "Unclear"
@@ -169,3 +192,19 @@ class SearchResponse(BaseModel):
     query: str
     count: int
     results: List[ArticleSummary] = Field(default_factory=list)
+
+
+class CompareItem(BaseModel):
+    """One article to include in a comparison (a selected search result)."""
+
+    source: str = "europepmc"
+    article_id: str
+
+
+class CompareRequest(BaseModel):
+    items: List[CompareItem] = Field(default_factory=list)
+
+
+class CompareResponse(BaseModel):
+    count: int
+    analyses: List[EvidenceAnalysis] = Field(default_factory=list)

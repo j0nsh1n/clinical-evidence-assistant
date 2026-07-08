@@ -33,9 +33,8 @@ legal open-access full-text link by DOI when one exists (no piracy).
 **MVP** — single-article, abstract-based, rule-driven analysis behind one
 endpoint, with graceful handling of missing abstracts and unknown designs.
 
-**Out of scope (for now)** — full-text PDF reasoning, perfect medical
-interpretation, diagnosis/treatment support, and bulk analysis. An optional LLM
-refinement pass and a multi-article comparison view are planned later.
+**Out of scope (for now)** — perfect medical interpretation,
+diagnosis/treatment support, and bulk analysis.
 
 ---
 
@@ -59,7 +58,7 @@ clinical-evidence-assistant/
 │   │   ├── evidence_service.py  # orchestration: source dispatch -> extract -> assemble
 │   │   └── errors.py            # shared source exceptions
 │   └── static/                  # web UI: Heimr theme, dark mode, metric definitions (index/style/app)
-├── tests/                       # 72 tests (rules, PubMed, Europe PMC, Unpaywall, API; network mocked)
+├── tests/                       # 145 tests (rules, sources, trials, compare, API; network mocked)
 └── scripts/benchmark.py         # accuracy benchmark over a labelled abstract set
 ```
 
@@ -158,8 +157,13 @@ Shipped in **1.0**:
 - [x] Rule-based **key-points summary**; publication-type-aware design classification
 - [x] Web UI ("Heimr"): **dark mode** (system + toggle), source selector, **metric definitions + glossary**
 - [x] **Accuracy benchmark** — 26 labelled abstracts (88% design / 92% level / 100% sample-size)
-- [x] Optional **LLM refinement** — "Refine with AI" rewrites the summary + limitations (`rules+llm`, Claude Sonnet 4.6); the evidence level stays rule-based. Needs `ANTHROPIC_API_KEY`.
+- [x] Optional **LLM refinement** — "Refine with AI" rewrites the summary + limitations (`rules+llm`); the evidence level stays rule-based. Runs on a **free local model via [Ollama](https://ollama.com)** (set `OLLAMA_MODEL`, no API key) or the **Anthropic** cloud API (`ANTHROPIC_API_KEY`, Claude Sonnet 4.6). `LLM_PROVIDER=auto` prefers the local model.
+
+Shipped in **1.1**:
+- [x] **Multi-article comparison** — tick articles in the search results, then compare them side by side (design, evidence level, sample size, PICO, key finding)
+- [x] **ClinicalTrials.gov** trials tab — search registered trials and open a trial-record card (status, phase, enrollment, interventions); trials are not A–D graded
+- [x] **Library** reading list with your own appraisal notes; **PDF drop-in** (read locally); **statistics reader** (RR/OR/HR + CI + p-values); **retraction flags**; **"Why this grade?"** trail; **export/cite** (Markdown / BibTeX / RIS); AI **PICO suggestions** and **"Ask this article"**
 
 Planned:
-- [ ] **ClinicalTrials.gov** trial-record tab
-- [ ] **Multi-article comparison** view
+- [ ] PMC open-access **full text** fed to the same rule extractors
+- [ ] **CASP-style** appraisal-signals checklist per design

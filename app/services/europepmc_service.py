@@ -105,6 +105,7 @@ def _parse_lite(item: dict) -> dict:
         "source": SOURCE,
         "article_id": f"{src}/{ext_id}",
         "pmid": str(item.get("pmid", "")).strip() or None,
+        "pmcid": str(item.get("pmcid", "")).strip() or None,
         "doi": str(item.get("doi", "")).strip() or None,
         "title": str(item.get("title", "")).strip() or None,
         "authors": _authors_from_string(item.get("authorString", "")),
@@ -173,6 +174,7 @@ def _parse_core(item: dict) -> dict:
         "citation": _build_citation(journal, year, volume, issue, pages),
         "doi": str(item.get("doi", "")).strip() or None,
         "pmid": str(item.get("pmid", "")).strip() or None,
+        "pmcid": str(item.get("pmcid", "")).strip() or None,
         "publication_types": pub_types,
         "keywords": deduped[:10],
         "is_open_access": str(item.get("isOpenAccess", "")).upper() == "Y",
@@ -197,6 +199,50 @@ def search_articles(query: str, max_results: int = 20) -> List[dict]:
         if parsed["article_id"] != "MED/":
             results.append(parsed)
     return results
+
+
+def fetch_full_text(pmcid: Optional[str], max_chars: int = 24000) -> Optional[str]:
+    """Return sectioned plain text of the LEGAL open-access full text for a PMCID, or None.
+
+    Europe PMC serves machine-readable JATS only for the open-access subset, keyed by
+    PMCID — the endpoint is ``.../rest/PMC3258128/fullTextXML`` (a single PMCID segment).
+    Best-effort: any failure (not in the OA subset, no XML, parse error) returns None.
+    """
+    pmcid = str(pmcid or "").strip().upper()
+    if not pmcid.startswith("PMC"):
+        return None
+    try:
+        response = httpx.get(
+            f"https://www.ebi.ac.uk/europepmc/webservices/rest/{pmcid}/fullTextXML",
+            headers=_HEADERS,
+            timeout=_settings.ncbi_timeout_seconds,
+        )
+        if response.status_code != 200 or not response.text.strip():
+            return None
+        import xml.etree.ElementTree as ET
+
+        root = ET.fromstring(response.text)
+    except Exception:  # noqa: BLE001 - full text is a bonus; never raise
+        return None
+
+    body = root.find(".//body")
+    chunks: List[str] = []
+    if body is not None:
+        top_secs = body.findall("sec")
+        if top_secs:
+            for sec in top_secs:
+                heading = (sec.findtext("title") or "").strip()
+                text = re.sub(r"\s+", " ", " ".join(sec.itertext())).strip()
+                if text:
+                    chunks.append(f"## {heading}\n{text}" if heading else text)
+        else:
+            text = re.sub(r"\s+", " ", " ".join(body.itertext())).strip()
+            if text:
+                chunks.append(text)
+    full = "\n\n".join(chunks)
+    if len(full) < 500:
+        return None
+    return full[:max_chars]
 
 
 def fetch_article(article_id: str) -> dict:

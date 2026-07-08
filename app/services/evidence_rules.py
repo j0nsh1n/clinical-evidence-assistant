@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 from app.schemas.evidence import (
     ClinicalQuestionType,
     EvidenceLevel,
+    ReportedStatistic,
     StudyDesign,
     StudyDesignResult,
 )
@@ -255,6 +256,151 @@ def extract_key_finding(abstract: str, sections: Optional[Dict[str, str]] = None
                 return sections[key]
     sentences = _split_sentences(abstract)
     return sentences[-1] if sentences else None
+
+
+# ---------------------------------------------------------------------------
+# Reported statistics — effect sizes, confidence intervals, p-values
+# ---------------------------------------------------------------------------
+# Deterministic extraction + fixed-template readings; no model ever touches the
+# numbers. Two measure patterns: spelled-out names are case-insensitive, but
+# abbreviations are case-SENSITIVE so the word "or" never matches "OR".
+
+_STAT_NOUNS = {
+    "HR": ("hazard ratio", "rate of the outcome"),
+    "OR": ("odds ratio", "odds of the outcome"),
+    "RR": ("risk ratio", "risk of the outcome"),
+    "IRR": ("incidence rate ratio", "incidence rate of the outcome"),
+}
+
+# A ratio value, allowing the Lancet-style middle-dot decimal (0·75).
+_NUM = r"\d+(?:[.·]\d+)?"
+
+_SPELLED_MEASURE_RE = re.compile(
+    r"\b(?P<adj>adjusted\s+)?(?P<name>hazard ratio|odds ratio|risk ratio|relative risk|"
+    r"incidence rate ratio|rate ratio)s?\b"
+    r"(?:\s*\((?:a?(?:HR|OR|RR)|IRR)\))?"  # e.g. "hazard ratio (HR) 0.75"
+    rf"[\s,:=]*(?:of|was|were)?[\s,:=]*[\[\(]?\s*(?P<value>{_NUM})",
+    re.IGNORECASE,
+)
+_ABBREV_MEASURE_RE = re.compile(
+    rf"\b(?P<abbr>a?(?:HR|OR|RR)|IRR)\b\s*[,:=]?\s*[\[\(]?\s*(?P<value>{_NUM})"
+)
+_CI_RE = re.compile(
+    rf"95\s*%\s*(?:CI|confidence interval)[\s:,=]*\(?\s*(?P<low>{_NUM})\s*"
+    rf"(?:to|through|[-–—−,])\s*(?P<high>{_NUM})",
+    re.IGNORECASE,
+)
+_P_RE = re.compile(rf"\bP\s*(?P<cmp>[<=>])\s*(?P<p>{_NUM})", re.IGNORECASE)
+
+_SPELLED_TO_KEY = {
+    "hazard ratio": "HR",
+    "odds ratio": "OR",
+    "risk ratio": "RR",
+    "relative risk": "RR",
+    "incidence rate ratio": "IRR",
+    "rate ratio": "IRR",
+}
+
+
+def _to_float(raw: str) -> float:
+    return float(raw.replace("·", "."))
+
+
+def _stat_reading(
+    key: str,
+    value: float,
+    ci_low: Optional[float],
+    ci_high: Optional[float],
+    p_value: Optional[str],
+) -> str:
+    noun = _STAT_NOUNS[key][1]
+    if value < 1:
+        direction = f"about {round((1 - value) * 100)}% lower {noun}"
+    elif value > 1:
+        direction = f"about {round((value - 1) * 100)}% higher {noun}"
+    else:
+        direction = f"no difference in the {noun}"
+    parts = [f"Suggests {direction} in the studied group"]
+    if ci_low is not None and ci_high is not None:
+        if ci_low <= 1.0 <= ci_high:
+            parts.append(
+                "but the 95% CI includes 1, so the result is not statistically "
+                "significant at the usual threshold (could be chance)"
+            )
+        else:
+            parts.append(
+                "the 95% CI excludes 1, so the result is statistically "
+                "significant at the usual threshold"
+            )
+    elif p_value:
+        try:
+            significant = float(p_value.lstrip("<=>")) <= 0.05 and not p_value.startswith(">")
+        except ValueError:
+            significant = False
+        parts.append(
+            "reported as statistically significant (p" + p_value + ")"
+            if significant
+            else "not statistically significant as reported (p" + p_value + ")"
+        )
+    parts.append("statistical significance is not the same as clinical importance")
+    return "; ".join(parts) + "."
+
+
+def extract_statistics(text: str, max_stats: int = 6) -> List[ReportedStatistic]:
+    """Find ratio effect estimates (HR/OR/RR/IRR) with nearby 95% CIs / p-values."""
+    haystack = re.sub(r"\s+", " ", text or "")
+    found: List[ReportedStatistic] = []
+    seen: set = set()
+
+    matches = []
+    for match in _SPELLED_MEASURE_RE.finditer(haystack):
+        key = _SPELLED_TO_KEY[match.group("name").lower()]
+        adjusted = bool(match.group("adj"))
+        matches.append((match, key, adjusted))
+    for match in _ABBREV_MEASURE_RE.finditer(haystack):
+        abbr = match.group("abbr")
+        adjusted = abbr.startswith("a") and abbr != "IRR"
+        matches.append((match, abbr.lstrip("a") if adjusted else abbr, adjusted))
+    matches.sort(key=lambda item: item[0].start())
+
+    for match, key, adjusted in matches:
+        value = _to_float(match.group("value"))
+        if not 0.01 <= value <= 50:
+            continue
+        window = haystack[match.end() : match.end() + 90]
+        ci = _CI_RE.search(window)
+        ci_low = _to_float(ci.group("low")) if ci else None
+        ci_high = _to_float(ci.group("high")) if ci else None
+        p_match = _P_RE.search(haystack[match.end() : match.end() + 140])
+        p_value = f"{p_match.group('cmp')}{p_match.group('p').replace(chr(0xB7), '.')}" if p_match else None
+
+        dedupe_key = (key, adjusted, value)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        label = ("adjusted " if adjusted else "") + _STAT_NOUNS[key][0]
+        display = ("a" if adjusted else "") + key + f" {value:g}"
+        if ci_low is not None:
+            display += f" (95% CI {ci_low:g}–{ci_high:g}"
+            display += f"; p{p_value})" if p_value else ")"
+        elif p_value:
+            display += f" (p{p_value})"
+        found.append(
+            ReportedStatistic(
+                measure=key,
+                label=label,
+                value=value,
+                ci_low=ci_low,
+                ci_high=ci_high,
+                p_value=p_value,
+                display=display,
+                reading=_stat_reading(key, value, ci_low, ci_high, p_value),
+            )
+        )
+        if len(found) >= max_stats:
+            break
+    return found
 
 
 # ---------------------------------------------------------------------------

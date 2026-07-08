@@ -125,13 +125,18 @@ def test_analyze_includes_metadata_and_prefers_pubtype(monkeypatch):
             "keywords": ["asthma"],
         }
 
-    from app.services import unpaywall_service
+    from app.services import retraction_service, unpaywall_service
 
     monkeypatch.setattr(pubmed_service, "fetch_article", fake_fetch)
     monkeypatch.setattr(
         unpaywall_service,
         "find_open_access",
         lambda doi: {"is_open_access": True, "oa_url": "https://oa.example/x.pdf"},
+    )
+    monkeypatch.setattr(
+        retraction_service,
+        "check_retraction",
+        lambda doi, pub_types=None: {"is_retracted": False, "retraction_source": None},
     )
     data = client.get("/api/evidence/article/999").json()
     assert data["authors"] == ["Smith J"]
@@ -171,6 +176,43 @@ def test_analyze_europepmc_source(monkeypatch):
     data = response.json()
     assert data["source_database"] == "europepmc"
     assert data["study_design"] == "cohort"
+
+
+def test_analyze_flags_retracted_article(monkeypatch):
+    def fake_fetch(pmid):
+        return {
+            "article_id": pmid,
+            "source_database": "pubmed",
+            "title": "A retracted trial",
+            "abstract": "In this randomized controlled trial, 100 adults were enrolled.",
+            "abstract_sections": {},
+            "publication_types": ["Randomized Controlled Trial", "Retracted Publication"],
+        }
+
+    monkeypatch.setattr(pubmed_service, "fetch_article", fake_fetch)
+    data = client.get("/api/evidence/article/42").json()
+    assert data["is_retracted"] is True
+    assert data["retraction_source"] == "publication-type tag"
+    # the warning leads the caution list; the rule-based grade is untouched
+    assert data["caution_notes"][0].startswith("RETRACTED")
+    assert data["evidence_level"] == "B"
+
+
+def test_search_rows_flag_retracted_pub_type(monkeypatch):
+    monkeypatch.setattr(
+        pubmed_service,
+        "search_articles",
+        lambda q, max_results=20: [
+            {
+                "article_id": "1",
+                "pmid": "1",
+                "title": "Retracted study",
+                "publication_types": ["Journal Article", "Retracted Publication"],
+            }
+        ],
+    )
+    data = client.get("/api/search?q=x&source=pubmed").json()
+    assert data["results"][0]["is_retracted"] is True
 
 
 def test_search_dispatches_to_source(monkeypatch):

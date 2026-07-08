@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Clinical Evidence Assistant"
-    app_version: str = "1.0.0"
+    app_version: str = "1.1.0"
 
     # NCBI E-utilities (PubMed). NCBI asks every caller to identify themselves by
     # email; an API key raises the rate limit from 3 to 10 requests/second.
@@ -22,10 +22,22 @@ class Settings(BaseSettings):
     ncbi_api_key: Optional[str] = None
     ncbi_timeout_seconds: int = 30
 
-    # Optional LLM refinement (Phase 8). When ANTHROPIC_API_KEY is unset, the app
-    # falls back to the rules-based summary.
+    # Optional LLM refinement (Phase 8). Two providers are supported; when none is
+    # configured the app falls back to the rules-based summary.
+    #   • Ollama    — a local model (free, no API key). Set OLLAMA_MODEL (e.g.
+    #                 "llama3.1") after pulling it; it is reached over OLLAMA_HOST.
+    #   • Anthropic — the cloud Claude API. Set ANTHROPIC_API_KEY.
+    # LLM_PROVIDER selects one: "auto" (default) prefers a local Ollama model, then
+    # Anthropic; "ollama" or "anthropic" force that provider.
+    llm_provider: str = "auto"
+
+    # Local analysis history (SQLite reading list). Relative to the project root.
+    history_db_path: str = "data/history.db"
     anthropic_api_key: Optional[str] = None
     llm_model: str = "claude-sonnet-4-6"
+    ollama_host: str = "http://localhost:11434"
+    ollama_model: Optional[str] = None
+    llm_timeout_seconds: int = 120
 
 
 @lru_cache
