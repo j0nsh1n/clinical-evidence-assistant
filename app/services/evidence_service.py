@@ -69,6 +69,14 @@ def _resolve_open_access(article: Dict) -> Dict[str, Optional[str]]:
     return {"is_open_access": is_oa, "oa_url": oa_url}
 
 
+def _section_text(sections: Dict[str, str], keyword: str) -> Optional[str]:
+    """First full-text section whose (upper-cased) heading contains ``keyword``."""
+    for heading, text in sections.items():
+        if keyword in heading:
+            return text
+    return None
+
+
 def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
     """Run the rule pipeline over a normalized article dict."""
     title = article.get("title") or ""
@@ -84,8 +92,32 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
     pico = evidence_rules.extract_pico_hints(abstract or combined)
     key_finding = evidence_rules.extract_key_finding(abstract, sections)
     reported_statistics = evidence_rules.extract_statistics(abstract or combined)
+
+    # Open-access full text fills facts the abstract omits (never the grade):
+    # sample size from Methods, extra effect estimates from Results.
+    used_full_text = False
+    full_text_sections = article.get("full_text_sections") or {}
+    if full_text_sections:
+        methods_text = _section_text(full_text_sections, "METHOD")
+        results_text = _section_text(full_text_sections, "RESULT")
+        if sample_size is None and methods_text:
+            ft_n = evidence_rules.extract_sample_size(methods_text)
+            if ft_n is not None:
+                sample_size, used_full_text = ft_n, True
+        if results_text:
+            seen = {s.display.strip().lower() for s in reported_statistics}
+            for stat in evidence_rules.extract_statistics(results_text):
+                if len(reported_statistics) >= 6:
+                    break
+                if stat.display.strip().lower() not in seen:
+                    reported_statistics.append(stat)
+                    seen.add(stat.display.strip().lower())
+                    used_full_text = True
+
     level, label = evidence_rules.map_evidence_level(design_result.design)
-    cautions = evidence_rules.build_caution_notes(design_result.design, sample_size, has_abstract)
+    cautions = evidence_rules.build_caution_notes(
+        design_result.design, sample_size, has_abstract, used_full_text
+    )
     if article.get("is_preprint"):
         cautions.insert(0, "Preprint — not yet peer-reviewed.")
 
@@ -183,6 +215,7 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
         confidence_score=confidence,
         caution_notes=cautions,
         extraction_method=method,
+        used_full_text=used_full_text,
     )
 
 

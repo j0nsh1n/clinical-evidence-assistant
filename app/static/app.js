@@ -46,6 +46,8 @@ const GLOSSARY = {
     "This article has been formally retracted (withdrawn) by the journal or authors — its findings should not be relied on. Flagged via PubMed's own tags or the Retraction Watch data in OpenAlex.",
   open_access:
     "A free, legal full-text copy is available (found via Unpaywall or PubMed Central). We never link to pirated copies.",
+  full_text:
+    "Some fields (sample size, extra statistics) were read from the article's legal open-access full text, not just the abstract — a fuller picture. The A–D grade still comes only from the study design.",
   limitations:
     "Caveats about the study's design or methods that temper its conclusions — shown when you refine the summary with AI.",
 };
@@ -564,6 +566,7 @@ function render(d) {
   if (d.is_retracted) src.push(`<span class="badge retracted">Retracted</span>${info("retracted")}`);
   if (d.is_preprint) src.push(`<span class="badge preprint">Preprint</span>${info("preprint")}`);
   if (d.oa_url) src.push(`<a class="badge oa" href="${escapeHtml(d.oa_url)}" target="_blank" rel="noopener">Free full text ↗</a>`);
+  if (d.used_full_text) src.push(`<span class="badge fulltext">Read from full text</span>${info("full_text")}`);
 
   resultEl.innerHTML = `
     <h2>${escapeHtml(d.title || "Untitled article")}</h2>
@@ -1013,6 +1016,7 @@ function glossary() {
     ["preprint", "Preprint"],
     ["retracted", "Retracted"],
     ["open_access", "Open access"],
+    ["full_text", "Full text used"],
   ];
   const map =
     `<div class="gl-item"><dt>The A–D scale</dt><dd>A (High): systematic review / meta-analysis. ` +

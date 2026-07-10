@@ -201,8 +201,8 @@ def search_articles(query: str, max_results: int = 20) -> List[dict]:
     return results
 
 
-def fetch_full_text(pmcid: Optional[str], max_chars: int = 24000) -> Optional[str]:
-    """Return sectioned plain text of the LEGAL open-access full text for a PMCID, or None.
+def _fetch_full_text_body(pmcid: Optional[str]):
+    """Fetch the LEGAL open-access JATS ``<body>`` element for a PMCID, or None.
 
     Europe PMC serves machine-readable JATS only for the open-access subset, keyed by
     PMCID — the endpoint is ``.../rest/PMC3258128/fullTextXML`` (a single PMCID segment).
@@ -221,11 +221,14 @@ def fetch_full_text(pmcid: Optional[str], max_chars: int = 24000) -> Optional[st
             return None
         import xml.etree.ElementTree as ET
 
-        root = ET.fromstring(response.text)
+        return ET.fromstring(response.text).find(".//body")
     except Exception:  # noqa: BLE001 - full text is a bonus; never raise
         return None
 
-    body = root.find(".//body")
+
+def fetch_full_text(pmcid: Optional[str], max_chars: int = 24000) -> Optional[str]:
+    """Return sectioned plain text of the open-access full text for a PMCID, or None."""
+    body = _fetch_full_text_body(pmcid)
     chunks: List[str] = []
     if body is not None:
         top_secs = body.findall("sec")
@@ -245,6 +248,26 @@ def fetch_full_text(pmcid: Optional[str], max_chars: int = 24000) -> Optional[st
     return full[:max_chars]
 
 
+def fetch_full_text_sections(pmcid: Optional[str], max_chars: int = 12000) -> Dict[str, str]:
+    """Return ``{SECTION_HEADING: text}`` for the open-access full text, or ``{}``.
+
+    Keyed by upper-cased top-level section title (e.g. ``"METHODS"``, ``"RESULTS"``) so
+    rule extractors can target the section that carries a given fact. Best-effort.
+    """
+    body = _fetch_full_text_body(pmcid)
+    if body is None:
+        return {}
+    sections: Dict[str, str] = {}
+    for sec in body.findall("sec"):
+        heading = (sec.findtext("title") or "").strip()
+        if not heading:
+            continue
+        text = re.sub(r"\s+", " ", " ".join(sec.itertext())).strip()
+        if text:
+            sections[heading.upper()] = text[:max_chars]
+    return sections
+
+
 def fetch_article(article_id: str) -> dict:
     article_id = str(article_id).strip()
     if not article_id:
@@ -259,6 +282,9 @@ def fetch_article(article_id: str) -> dict:
     if not results:
         raise ArticleNotFound(f"No Europe PMC record for {article_id}.")
     try:
-        return _parse_core(results[0])
+        article = _parse_core(results[0])
     except (KeyError, IndexError, TypeError) as exc:
         raise SourceError(f"Could not parse Europe PMC record {article_id}: {exc}") from exc
+    if article.get("is_open_access") and article.get("pmcid"):
+        article["full_text_sections"] = fetch_full_text_sections(article["pmcid"])
+    return article

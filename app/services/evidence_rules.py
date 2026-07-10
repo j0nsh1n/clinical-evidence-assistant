@@ -441,11 +441,15 @@ _WEAK = {
 
 
 def build_caution_notes(
-    design: StudyDesign, sample_size: Optional[int], has_abstract: bool
+    design: StudyDesign,
+    sample_size: Optional[int],
+    has_abstract: bool,
+    used_full_text: bool = False,
 ) -> List[str]:
     """Honest caveats shown alongside the evidence level."""
+    scope = "the abstract and open-access full text" if used_full_text else "the abstract only"
     notes: List[str] = [
-        "Evidence level estimated from the abstract only, not a full critical appraisal."
+        f"Evidence level estimated from {scope}, not a full critical appraisal."
     ]
     if not has_abstract:
         notes.append("No abstract was available; this classification may be unreliable.")

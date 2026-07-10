@@ -78,3 +78,28 @@ def test_fetch_article_not_found(monkeypatch):
     monkeypatch.setattr(europepmc_service, "_get", lambda params: {"resultList": {"result": []}})
     with pytest.raises(europepmc_service.ArticleNotFound):
         europepmc_service.fetch_article("MED/999")
+
+
+class _FakeResp:
+    def __init__(self, status_code, text):
+        self.status_code = status_code
+        self.text = text
+
+
+_FULLTEXT_XML = (
+    "<article><body>"
+    "<sec><title>Methods</title><p>A total of 512 adults were enrolled.</p></sec>"
+    "<sec><title>Results</title><p>The hazard ratio was 0.75 (95% CI 0.60-0.90).</p></sec>"
+    "</body></article>"
+)
+
+
+def test_fetch_full_text_sections_parses_jats(monkeypatch):
+    monkeypatch.setattr(europepmc_service.httpx, "get", lambda *a, **k: _FakeResp(200, _FULLTEXT_XML))
+    sections = europepmc_service.fetch_full_text_sections("PMC123")
+    assert "512 adults" in sections["METHODS"]
+    assert "hazard ratio" in sections["RESULTS"]
+
+
+def test_fetch_full_text_sections_non_pmc_returns_empty():
+    assert europepmc_service.fetch_full_text_sections("MED/1") == {}

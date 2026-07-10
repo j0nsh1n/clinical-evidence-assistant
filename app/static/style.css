@@ -155,6 +155,7 @@ select { width: auto; flex-shrink: 0; cursor: pointer; }
   background: color-mix(in srgb, var(--level-d) 14%, var(--surface));
 }
 .badge.oa, a.badge.oa { color: var(--level-a); border-color: color-mix(in srgb, var(--level-a) 45%, transparent); text-decoration: none; }
+.badge.fulltext { color: var(--level-b); border-color: color-mix(in srgb, var(--level-b) 45%, transparent); }
 .lvl-a { --lvl: var(--level-a); } .lvl-b { --lvl: var(--level-b); }
 .lvl-c { --lvl: var(--level-c); } .lvl-d { --lvl: var(--level-d); } .lvl-unclear { --lvl: var(--level-u); }
 
