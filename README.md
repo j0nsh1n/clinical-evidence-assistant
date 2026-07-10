@@ -91,12 +91,13 @@ limits causal inference"*, *"Sample size was not clearly reported"*).
 ```bash
 # from the project root
 python -m venv .venv
-.venv\Scripts\activate          # Windows (PowerShell: .venv\Scripts\Activate.ps1)
-# source .venv/bin/activate     # macOS/Linux
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-cp .env.example .env            # then set NCBI_EMAIL (required by NCBI)
+cp .env.example .env             # then set NCBI_EMAIL (required by NCBI)
 
+python -m app                    # starts the server and opens http://127.0.0.1:8000/
+# or, for auto-reload while developing:
 uvicorn app.main:app --reload
 # open http://127.0.0.1:8000/      for the web app  (/docs for the API)
 ```
