@@ -58,7 +58,7 @@ clinical-evidence-assistant/
 │   │   ├── evidence_service.py  # orchestration: source dispatch -> extract -> assemble
 │   │   └── errors.py            # shared source exceptions
 │   └── static/                  # web UI: Heimr theme, dark mode, metric definitions (index/style/app)
-├── tests/                       # 150 tests (rules, sources, trials, compare, full text, API; network mocked)
+├── tests/                       # 163 tests (rules, sources, trials, compare, full text, API; network mocked)
 └── scripts/benchmark.py         # accuracy benchmark over a labelled abstract set
 ```
 
@@ -166,5 +166,5 @@ Shipped in **1.1**:
 - [x] **Library** reading list with your own appraisal notes; **PDF drop-in** (read locally); **statistics reader** (RR/OR/HR + CI + p-values); **retraction flags**; **"Why this grade?"** trail; **export/cite** (Markdown / BibTeX / RIS); AI **PICO suggestions** and **"Ask this article"**
 
 Planned:
-- [x] PMC open-access **full text** → sample size + extra statistics via the same rule extractors (abstract-first; the grade stays rule-based). Next: PICO & study-design tie-breaks from full text.
+- [x] PMC open-access **full text** → sample size, extra statistics, **PICO**, and **study-design tie-breaks** via the same rule extractors (abstract-first; design from Methods only when the abstract is unclear; grade still maps from design by the fixed A–D table).
 - [ ] **CASP-style** appraisal-signals checklist per design

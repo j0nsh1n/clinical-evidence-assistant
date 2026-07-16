@@ -47,7 +47,7 @@ const GLOSSARY = {
   open_access:
     "A free, legal full-text copy is available (found via Unpaywall or PubMed Central). We never link to pirated copies.",
   full_text:
-    "Some fields (sample size, extra statistics) were read from the article's legal open-access full text, not just the abstract — a fuller picture. The A–D grade still comes only from the study design.",
+    "Some fields (sample size, PICO, extra statistics) were read from the article's legal open-access full text, not just the abstract — a fuller picture. Study design is only read from full text when the abstract left it unclear; the A–D grade still follows that design by the fixed table.",
   limitations:
     "Caveats about the study's design or methods that temper its conclusions — shown when you refine the summary with AI.",
 };
@@ -724,19 +724,34 @@ function whyGrade(d) {
   const hasAbstract = d.abstract && d.abstract.trim();
   if (!phrase && !hasAbstract) return "";
   const fromPubType = !!phrase && /^PubMed type:/i.test(phrase);
+  const fromFullText = !!phrase && /^full text:/i.test(phrase);
   const conf = Math.round((d.study_design_confidence || 0) * 100);
+  const cueLabel = (() => {
+    if (!phrase) return "no design cue found";
+    if (fromPubType || fromFullText) return phrase;
+    return `“${phrase}”`;
+  })();
   const chain = [
-    `<span class="why-cue">${phrase ? escapeHtml(fromPubType ? phrase : `“${phrase}”`) : "no design cue found"}</span>`,
+    `<span class="why-cue">${escapeHtml(cueLabel)}</span>`,
     `<span class="why-step">${escapeHtml(humanize(d.study_design))}</span>`,
     `<span class="why-step">Level ${escapeHtml(levelWord(d.evidence_level, d.evidence_label))}</span>`,
   ].join(`<span class="why-arrow" aria-hidden="true">→</span>`);
+  const barePhrase = fromFullText
+    ? String(phrase).replace(/^full text:\s*/i, "")
+    : phrase;
   const inAbstract =
-    !!phrase && !fromPubType && !!hasAbstract && d.abstract.toLowerCase().includes(String(phrase).toLowerCase());
+    !!barePhrase &&
+    !fromPubType &&
+    !fromFullText &&
+    !!hasAbstract &&
+    d.abstract.toLowerCase().includes(String(barePhrase).toLowerCase());
   const note = fromPubType
     ? "The design comes from PubMed's own publication-type tag — the most reliable signal — and maps to the level by the fixed A–D table (see the glossary below)."
-    : phrase
-      ? `This phrase${inAbstract ? " (highlighted below)" : ", found in the title"} triggered the design classification (pattern confidence ${conf}%); the design maps to the level by the fixed A–D table (see the glossary below).`
-      : "No design phrase was recognized, so the design and level are unclear — try finding the design cues in the abstract yourself.";
+    : fromFullText
+      ? `The abstract left the design unclear; this cue was found in the open-access full text (Methods) and triggered classification (pattern confidence ${conf}%). The design maps to the level by the fixed A–D table (see the glossary below).`
+      : phrase
+        ? `This phrase${inAbstract ? " (highlighted below)" : ", found in the title"} triggered the design classification (pattern confidence ${conf}%); the design maps to the level by the fixed A–D table (see the glossary below).`
+        : "No design phrase was recognized, so the design and level are unclear — try finding the design cues in the abstract yourself.";
   const abstractHtml = hasAbstract
     ? `<div class="why-abstract"><div class="label">Abstract${inAbstract ? " — design cue highlighted" : ""}</div><p>${highlightPhrase(d.abstract, inAbstract ? phrase : null)}</p></div>`
     : "";
