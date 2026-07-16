@@ -96,6 +96,12 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
     used_full_text = extraction.used_full_text
 
     level, label = evidence_rules.map_evidence_level(design_result.design)
+    appraisal_checklist = evidence_rules.build_appraisal_checklist(
+        design_result.design,
+        abstract,
+        article.get("full_text_sections") or {},
+        title=title,
+    )
     cautions = evidence_rules.build_caution_notes(
         design_result.design, sample_size, has_abstract, used_full_text
     )
@@ -191,6 +197,7 @@ def analyze_text(article: Dict, use_llm: bool = False) -> EvidenceAnalysis:
         limitations=limitations,
         key_points_summary=summary,
         key_points=bullets,
+        appraisal_checklist=appraisal_checklist,
         evidence_level=level,
         evidence_label=label,
         confidence_score=confidence,

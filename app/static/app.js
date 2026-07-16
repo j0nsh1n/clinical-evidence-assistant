@@ -36,6 +36,8 @@ const GLOSSARY = {
   key_finding: "The study's headline result, taken from its conclusion or final sentence.",
   reported_statistics:
     "Effect estimates (hazard/odds/risk ratios) found in the abstract, with 95% confidence intervals and p-values. The plain-language reading comes from fixed templates — no AI touches the numbers. A CI that excludes 1 means statistically significant at the usual threshold; clinical importance is a separate judgement.",
+  appraisal_checklist:
+    "CASP-style appraisal cues detected by phrase matching in the abstract (and Methods/Results when open-access full text is available). “Mentioned” means the text used that language — not that the study did it well. “Not found” means the available text did not mention it. This checklist never changes the A–D grade.",
   key_points: "A plain-language recap assembled from the fields below — a quick gist, not a substitute for reading the study.",
   confidence:
     "How cleanly THIS TOOL could read the abstract (0–100%) — i.e. how sure the extraction is. It is NOT a measure of how strong or trustworthy the evidence itself is.",
@@ -606,6 +608,7 @@ function render(d) {
     ${block("Key finding", d.key_finding, "key_finding")}
     ${reportedStats(d)}
     ${block("Primary outcome", d.primary_outcome, "outcome")}
+    ${appraisalChecklist(d)}
     ${block("Limitations", d.limitations, "limitations")}
     ${articleDetails(d)}
 
@@ -666,6 +669,21 @@ function toMarkdown(d) {
   if (d.reported_statistics && d.reported_statistics.length) {
     L.push("", "**Reported statistics:**");
     d.reported_statistics.forEach((s) => L.push(`- ${s.display} — ${s.reading}`));
+  }
+  if (d.appraisal_checklist && d.appraisal_checklist.signals && d.appraisal_checklist.signals.length) {
+    const ac = d.appraisal_checklist;
+    L.push(
+      "",
+      `**Appraisal signals (${ac.label || "CASP-style"}):** ` +
+        `${ac.mentioned_count || 0} mentioned` +
+        (ac.concern_count ? `, ${ac.concern_count} concern` : "") +
+        ` of ${ac.total || ac.signals.length}`
+    );
+    ac.signals.forEach((s) => {
+      const st = s.status || "not_found";
+      const phrase = s.matched_phrase ? ` (“${s.matched_phrase}”)` : "";
+      L.push(`- [${st}] ${s.question}${phrase}`);
+    });
   }
   if (d.limitations) L.push("", `**Limitations:** ${d.limitations}`);
   if (d.caution_notes && d.caution_notes.length) {
@@ -974,6 +992,43 @@ function reportedStats(d) {
   return `<div class="block"><div class="label">Reported statistics ${info("reported_statistics")}</div><div class="stats">${rows}</div></div>`;
 }
 
+function appraisalStatusLabel(status) {
+  if (status === "mentioned") return "Mentioned";
+  if (status === "concern") return "Concern";
+  return "Not found";
+}
+
+function appraisalChecklist(d) {
+  const ac = d.appraisal_checklist;
+  if (!ac || !ac.signals || !ac.signals.length) return "";
+  const rows = ac.signals
+    .map((s) => {
+      const st = s.status || "not_found";
+      const phrase = s.matched_phrase
+        ? `<span class="appr-phrase muted">“${escapeHtml(s.matched_phrase)}”</span>`
+        : "";
+      const note = s.note ? `<p class="appr-note muted">${escapeHtml(s.note)}</p>` : "";
+      return (
+        `<div class="appr-row status-${escapeHtml(st)}">` +
+        `<span class="appr-badge">${escapeHtml(appraisalStatusLabel(st))}</span>` +
+        `<div class="appr-body"><div class="appr-q">${escapeHtml(s.question)} ${phrase}</div>${note}</div>` +
+        `</div>`
+      );
+    })
+    .join("");
+  const summary =
+    `${ac.mentioned_count || 0} mentioned` +
+    (ac.concern_count ? ` · ${ac.concern_count} concern` : "") +
+    ` · ${ac.total || ac.signals.length} cues`;
+  return (
+    `<details class="appraisal-checklist">` +
+    `<summary>Appraisal signals <span class="muted">(${escapeHtml(ac.label || "CASP-style")})</span> ${info("appraisal_checklist")}` +
+    `<span class="appr-summary muted">${escapeHtml(summary)}</span></summary>` +
+    `<p class="appr-disclaimer muted">Phrase detection only — not a full critical appraisal, and it does not change the A–D grade. “Not found” means the available text did not mention the cue.</p>` +
+    `<div class="appr-list">${rows}</div></details>`
+  );
+}
+
 function articleDetails(d) {
   const rows = [];
   if (d.authors && d.authors.length) rows.push(detail("Authors", escapeHtml(authorLine(d.authors))));
@@ -1025,6 +1080,7 @@ function glossary() {
     ["outcome", "Primary outcome"],
     ["key_finding", "Key finding"],
     ["reported_statistics", "Reported statistics"],
+    ["appraisal_checklist", "Appraisal signals"],
     ["confidence", "Confidence"],
     ["caution_notes", "Cautions"],
     ["limitations", "Limitations"],

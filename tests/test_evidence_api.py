@@ -31,6 +31,10 @@ def test_analyze_inline_abstract():
     assert data["sample_size"] == 320
     assert data["extraction_method"] == "rules"
     assert any("abstract only" in note for note in data["caution_notes"])
+    ac = data.get("appraisal_checklist")
+    assert ac is not None
+    assert ac["total"] >= 6
+    assert any(s["id"] == "randomization" and s["status"] == "mentioned" for s in ac["signals"])
 
 
 def test_analyze_pmid_uses_pubmed_service(monkeypatch):

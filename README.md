@@ -58,7 +58,7 @@ clinical-evidence-assistant/
 │   │   ├── evidence_service.py  # orchestration: source dispatch -> extract -> assemble
 │   │   └── errors.py            # shared source exceptions
 │   └── static/                  # web UI: Heimr theme, dark mode, metric definitions (index/style/app)
-├── tests/                       # 163 tests (rules, sources, trials, compare, full text, API; network mocked)
+├── tests/                       # 171 tests (rules, appraisal, sources, trials, compare, full text, API; network mocked)
 └── scripts/benchmark.py         # accuracy benchmark over a labelled abstract set
 ```
 
@@ -167,4 +167,4 @@ Shipped in **1.1**:
 
 Planned:
 - [x] PMC open-access **full text** → sample size, extra statistics, **PICO**, and **study-design tie-breaks** via the same rule extractors (abstract-first; design from Methods only when the abstract is unclear; grade still maps from design by the fixed A–D table).
-- [ ] **CASP-style** appraisal-signals checklist per design
+- [x] **CASP-style** appraisal-signals checklist per design (regex phrase detection; does not change the A–D grade)
