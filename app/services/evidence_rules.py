@@ -9,7 +9,7 @@ evidence *level* should always remain explainable from these rules.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, NamedTuple, Optional, Tuple
 
 from app.schemas.evidence import (
     ClinicalQuestionType,
@@ -169,6 +169,113 @@ def extract_sample_size(text: str) -> Optional[int]:
                 if 0 < value < 100_000_000:
                     candidates.append(value)
     return max(candidates) if candidates else None
+
+
+def section_text(sections: Optional[Dict[str, str]], keyword: str) -> Optional[str]:
+    """Return the best full-text section whose heading contains ``keyword``.
+
+    Prefers an exact heading match, then the shortest containing match, so
+    ``METHODS`` wins over ``STATISTICAL METHODS`` when looking for ``METHOD``.
+    """
+    if not sections:
+        return None
+    key = (keyword or "").upper()
+    if not key:
+        return None
+    candidates: List[Tuple[bool, int, str]] = []
+    for heading, text in sections.items():
+        h = (heading or "").upper()
+        if key in h and text:
+            candidates.append((h == key, len(h), text))
+    if not candidates:
+        return None
+    # Exact match first (False sorts before True when negated), then shortest heading.
+    candidates.sort(key=lambda item: (not item[0], item[1]))
+    return candidates[0][2]
+
+
+class FullTextExtraction(NamedTuple):
+    """Abstract-first extraction with optional OA full-text gap-fill."""
+
+    sample_size: Optional[int]
+    reported_statistics: List[ReportedStatistic]
+    pico: Dict[str, Optional[str]]
+    design: StudyDesignResult
+    used_full_text: bool
+
+
+def extract_with_fulltext(
+    abstract: str,
+    full_text_sections: Optional[Dict[str, str]] = None,
+    *,
+    title: str = "",
+    pub_types: Optional[List[str]] = None,
+    max_stats: int = 6,
+) -> FullTextExtraction:
+    """Abstract-first extraction; OA full text fills gaps only.
+
+    Full text never overrides a sample size, PICO field, or design already found
+    from the abstract/publication types. Study design is read from Methods only
+    when the abstract path is still ``unclear`` (a deliberate tie-break — the
+    grade can change only in that case).
+    """
+    combined = f"{title}. {abstract}".strip() if title else (abstract or "")
+    haystack = abstract or combined
+    sample_size = extract_sample_size(haystack)
+    reported_statistics = extract_statistics(haystack, max_stats=max_stats)
+    pico = extract_pico_hints(haystack)
+    design = classify_study_design_combined(combined, pub_types)
+    used_full_text = False
+
+    sections = full_text_sections or {}
+    if sections:
+        methods_text = section_text(sections, "METHOD")
+        results_text = section_text(sections, "RESULT")
+
+        # Design tie-break: abstract/pub-type unclear only.
+        if design.design == StudyDesign.unclear and methods_text:
+            ft_design = classify_study_design(methods_text)
+            if ft_design.design != StudyDesign.unclear:
+                phrase = ft_design.matched_phrase or "methods"
+                design = StudyDesignResult(
+                    design=ft_design.design,
+                    confidence=ft_design.confidence,
+                    matched_phrase=f"full text: {phrase}",
+                )
+                used_full_text = True
+
+        # PICO: fill missing fields from Methods (never override abstract hits).
+        if methods_text:
+            ft_pico = extract_pico_hints(methods_text)
+            for key, value in ft_pico.items():
+                if pico.get(key) is None and value is not None:
+                    pico[key] = value
+                    used_full_text = True
+
+        if sample_size is None and methods_text:
+            ft_n = extract_sample_size(methods_text)
+            if ft_n is not None:
+                sample_size = ft_n
+                used_full_text = True
+
+        if results_text:
+            seen = {s.display.strip().lower() for s in reported_statistics}
+            for stat in extract_statistics(results_text, max_stats=max_stats):
+                if len(reported_statistics) >= max_stats:
+                    break
+                key = stat.display.strip().lower()
+                if key not in seen:
+                    reported_statistics.append(stat)
+                    seen.add(key)
+                    used_full_text = True
+
+    return FullTextExtraction(
+        sample_size=sample_size,
+        reported_statistics=reported_statistics,
+        pico=pico,
+        design=design,
+        used_full_text=used_full_text,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -454,7 +561,14 @@ def build_caution_notes(
     if not has_abstract:
         notes.append("No abstract was available; this classification may be unreliable.")
     if design == StudyDesign.unclear:
-        notes.append("Study design could not be confidently identified from the abstract.")
+        scope_design = (
+            "the abstract or open-access full text"
+            if used_full_text
+            else "the abstract"
+        )
+        notes.append(
+            f"Study design could not be confidently identified from {scope_design}."
+        )
     if design in _OBSERVATIONAL:
         notes.append("Observational design limits causal inference.")
     if design in _WEAK:
