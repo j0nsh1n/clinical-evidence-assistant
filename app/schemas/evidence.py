@@ -109,6 +109,42 @@ class ReportedStatistic(BaseModel):
     reading: str = Field(description="Plain-language interpretation from fixed templates.")
 
 
+class AppraisalSignalStatus(str, Enum):
+    """Phrase-detection result for one appraisal cue (not a quality grade)."""
+
+    mentioned = "mentioned"
+    not_found = "not_found"
+    concern = "concern"
+
+
+class AppraisalSignal(BaseModel):
+    """One CASP-style appraisal cue detected by regex in the available text."""
+
+    id: str = Field(description="Stable machine id, e.g. 'blinding'.")
+    question: str = Field(description="Short student-facing appraisal question.")
+    status: AppraisalSignalStatus = AppraisalSignalStatus.not_found
+    matched_phrase: Optional[str] = Field(
+        default=None, description="Phrase that triggered the status (for transparency)."
+    )
+    note: Optional[str] = Field(
+        default=None, description="Brief gloss of what the cue means for the reader."
+    )
+
+
+class AppraisalChecklist(BaseModel):
+    """Design-specific appraisal-signal list. Never drives the A–D grade."""
+
+    design: StudyDesign = StudyDesign.unclear
+    label: str = Field(
+        default="CASP-style signals",
+        description="Which checklist family was used (e.g. RCT, cohort).",
+    )
+    signals: List[AppraisalSignal] = Field(default_factory=list)
+    mentioned_count: int = 0
+    concern_count: int = 0
+    total: int = 0
+
+
 class EvidenceAnalysis(BaseModel):
     """The full structured result returned to the API/UI."""
 
@@ -151,6 +187,10 @@ class EvidenceAnalysis(BaseModel):
     limitations: Optional[str] = None
     key_points_summary: Optional[str] = None
     key_points: List[str] = Field(default_factory=list)
+    appraisal_checklist: Optional[AppraisalChecklist] = Field(
+        default=None,
+        description="CASP-style phrase signals for critical appraisal practice; does not change the grade.",
+    )
 
     # --- provisional scoring ---
     evidence_level: EvidenceLevel = EvidenceLevel.unclear

@@ -12,6 +12,9 @@ import re
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 from app.schemas.evidence import (
+    AppraisalChecklist,
+    AppraisalSignal,
+    AppraisalSignalStatus,
     ClinicalQuestionType,
     EvidenceLevel,
     ReportedStatistic,
@@ -532,6 +535,426 @@ _EVIDENCE_MAP: Dict[StudyDesign, Tuple[EvidenceLevel, str]] = {
 def map_evidence_level(design: StudyDesign) -> Tuple[EvidenceLevel, str]:
     """Map a study design to a provisional (level, human label) pair."""
     return _EVIDENCE_MAP.get(design, (EvidenceLevel.unclear, "Unclear"))
+
+
+# ---------------------------------------------------------------------------
+# CASP-style appraisal signals (phrase detection only — never the grade)
+# ---------------------------------------------------------------------------
+# Each signal: (id, question, positive patterns, concern patterns, note).
+# First positive match → mentioned; else first concern match → concern;
+# else not_found. Patterns are case-insensitive regexes.
+
+_SignalSpec = Tuple[str, str, List[str], List[str], str]
+
+_SHARED_EFFECT_PRECISION: _SignalSpec = (
+    "effect_precision",
+    "Is the estimate of effect reported with a confidence interval?",
+    [r"95\s*%\s*(?:CI|confidence interval)", r"confidence interval"],
+    [],
+    "Precision (e.g. a 95% CI) helps judge whether a result could be chance.",
+)
+
+_SHARED_CONFOUNDING: _SignalSpec = (
+    "confounding_adjustment",
+    "Did the authors adjust for confounding?",
+    [
+        r"adjust(?:ed|ing)\s+for",
+        r"multivari(?:ate|able)",
+        r"propensity\s+score",
+        r"cox\s+(?:proportional\s+)?hazard",
+    ],
+    [],
+    "Observational associations can be driven by other differences between groups.",
+)
+
+_SHARED_ATTRITION: _SignalSpec = (
+    "attrition_followup",
+    "Is loss to follow-up or completion of the study described?",
+    [
+        r"lost to follow[-\s]?up",
+        r"\battrition\b",
+        r"dropout|drop[-\s]?out",
+        r"completed the (?:study|trial|follow[-\s]?up)",
+        r"follow[-\s]?up (?:rate|complete|was complete)",
+    ],
+    [],
+    "Uneven losses can bias results if those who leave differ from those who stay.",
+)
+
+_RCT_SIGNALS: List[_SignalSpec] = [
+    (
+        "randomization",
+        "Was assignment to groups randomized?",
+        [
+            r"randomi[sz]ed",
+            r"randomly\s+(?:assigned|allocated)",
+            r"\brandomi[sz]ation\b",
+        ],
+        [],
+        "Random assignment is the key strength of a trial for causal questions.",
+    ),
+    (
+        "allocation_concealment",
+        "Was allocation concealed before assignment?",
+        [
+            r"allocation\s+conceal",
+            r"sealed\s+(?:opaque\s+)?envelope",
+            r"central(?:ized)?\s+randomi[sz]ation",
+            r"interactive\s+voice\s+response",
+        ],
+        [],
+        "Concealment stops recruiters from influencing who gets which arm.",
+    ),
+    (
+        "blinding",
+        "Were participants or assessors blinded to treatment?",
+        [
+            r"double[-\s]?blind",
+            r"single[-\s]?blind",
+            r"triple[-\s]?blind",
+            r"\bblinded\b",
+            r"\bmask(?:ed|ing)\b",
+        ],
+        [r"open[-\s]?label", r"\bunblinded\b", r"not\s+blinded"],
+        "Blinding reduces expectation bias; open-label designs need more caution.",
+    ),
+    (
+        "intention_to_treat",
+        "Were participants analyzed in the groups to which they were assigned (ITT)?",
+        [
+            r"intention[-\s]?to[-\s]?treat",
+            r"\bITT\b",
+            r"as[-\s]?randomized",
+        ],
+        [r"per[-\s]?protocol\s+(?:analysis|population|set)"],
+        "ITT preserves the benefits of randomization when people switch or drop out.",
+    ),
+    (
+        "power_calculation",
+        "Was a sample-size or power calculation reported?",
+        [
+            r"power\s+(?:calculation|analysis|ed\s+to)",
+            r"sample[-\s]?size\s+(?:calculation|estimate|determination)",
+            r"powered\s+to\s+detect",
+        ],
+        [],
+        "An a priori power plan helps judge whether the study was big enough.",
+    ),
+    (
+        "baseline_similarity",
+        "Were baseline characteristics of the groups compared?",
+        [
+            r"baseline\s+characteristics",
+            r"similar\s+at\s+baseline",
+            r"groups\s+were\s+well\s+balanced",
+            r"table\s*1",
+        ],
+        [],
+        "Large baseline imbalances can undermine the randomization story.",
+    ),
+    _SHARED_ATTRITION,
+    _SHARED_EFFECT_PRECISION,
+]
+
+_COHORT_SIGNALS: List[_SignalSpec] = [
+    (
+        "exposure_defined",
+        "Is the exposure or cohort clearly defined?",
+        [
+            r"expos(?:ure|ed)\s+(?:was|were|defined|classified|assessed)",
+            r"cohort\s+(?:of|included|compris)",
+            r"eligible\s+(?:patients|participants|adults)",
+        ],
+        [],
+        "A clear exposure definition makes the comparison interpretable.",
+    ),
+    (
+        "outcome_ascertainment",
+        "Is how outcomes were measured or ascertained described?",
+        [
+            r"outcome(?:s)?\s+(?:was|were)\s+(?:ascertained|assessed|defined|validated)",
+            r"ascertain(?:ed|ment)",
+            r"adjudicat(?:ed|ion)",
+            r"validated\s+(?:against|using|by)",
+        ],
+        [],
+        "Weak outcome measurement can invent or hide associations.",
+    ),
+    (
+        "followup_duration",
+        "Is the length of follow-up reported?",
+        [
+            r"follow(?:ed|[\s-]?up)\s+(?:for|over|of)\s+\d",
+            r"median\s+follow[-\s]?up",
+            r"mean\s+follow[-\s]?up",
+            r"during\s+\d+\s+(?:years?|months?)\s+of\s+follow",
+        ],
+        [],
+        "Too-short follow-up can miss late outcomes.",
+    ),
+    _SHARED_CONFOUNDING,
+    _SHARED_ATTRITION,
+    _SHARED_EFFECT_PRECISION,
+]
+
+_CASE_CONTROL_SIGNALS: List[_SignalSpec] = [
+    (
+        "case_definition",
+        "Are cases clearly defined?",
+        [
+            r"cases?\s+(?:were|was)\s+(?:defined|identified|diagnosed|selected)",
+            r"case\s+definition",
+            r"incident\s+cases",
+        ],
+        [],
+        "A sharp case definition reduces misclassification.",
+    ),
+    (
+        "control_selection",
+        "Is how controls were selected described?",
+        [
+            r"controls?\s+(?:were|was)\s+(?:selected|matched|chosen|recruited)",
+            r"matched\s+controls?",
+            r"control\s+group",
+            r"\bcases?\s+and\s+controls?\b",
+        ],
+        [],
+        "Controls should represent the population that produced the cases.",
+    ),
+    (
+        "exposure_measurement",
+        "Is exposure measurement described for cases and controls?",
+        [
+            r"expos(?:ure|ed)\s+(?:was|were|assessed|measured|ascertained)",
+            r"self[-\s]?reported",
+            r"questionnaire",
+            r"interview(?:ed|s)?",
+        ],
+        [],
+        "Recall and measurement bias are classic case-control threats.",
+    ),
+    _SHARED_CONFOUNDING,
+    _SHARED_EFFECT_PRECISION,
+]
+
+_CROSS_SECTIONAL_SIGNALS: List[_SignalSpec] = [
+    (
+        "sampling_method",
+        "Is the sampling or recruitment method described?",
+        [
+            r"random\s+sample",
+            r"convenience\s+sample",
+            r"consecutive\s+(?:patients|participants|subjects)",
+            r"recruit(?:ed|ment)",
+            r"sampling\s+(?:frame|method|strategy)",
+        ],
+        [],
+        "Who was invited (and who wasn't) shapes how far results travel.",
+    ),
+    (
+        "response_rate",
+        "Is a response or participation rate reported?",
+        [
+            r"response\s+rate",
+            r"participation\s+rate",
+            r"response\s+of\s+\d",
+            r"\d+\s*%\s+(?:responded|participat)",
+        ],
+        [],
+        "Low response can make the sample unlike the target population.",
+    ),
+    (
+        "outcome_measure",
+        "Are the outcome measures defined?",
+        [
+            r"measur(?:ed|es?|ing)\s+(?:using|with|by)",
+            r"assessed\s+(?:using|with|by)",
+            r"validated\s+(?:scale|instrument|questionnaire|tool)",
+            r"diagnostic\s+criteria",
+        ],
+        [],
+        "Cross-sectional snapshots depend entirely on how things were measured.",
+    ),
+    _SHARED_CONFOUNDING,
+    _SHARED_EFFECT_PRECISION,
+]
+
+_SYNTHESIS_SIGNALS: List[_SignalSpec] = [
+    (
+        "search_strategy",
+        "Was a systematic literature search described?",
+        [
+            r"search(?:ed)?\s+(?:PubMed|MEDLINE|Embase|Cochrane|Scopus|Web of Science)",
+            r"systematic(?:ally)?\s+search",
+            r"database(?:s)?\s+(?:were\s+)?search",
+            r"literature\s+search",
+        ],
+        [],
+        "A transparent search is the backbone of a systematic review.",
+    ),
+    (
+        "inclusion_criteria",
+        "Are inclusion/eligibility criteria stated?",
+        [
+            r"inclusion\s+criteria",
+            r"eligibility\s+criteria",
+            r"inclusion\s+and\s+exclusion",
+            r"studies\s+were\s+(?:included|eligible)\s+if",
+        ],
+        [],
+        "Clear eligibility stops the review from cherry-picking studies.",
+    ),
+    (
+        "study_quality",
+        "Was risk of bias or study quality assessed?",
+        [
+            r"risk\s+of\s+bias",
+            r"quality\s+assessment",
+            r"critical\s+appraisal",
+            r"Cochrane\s+(?:risk\s+of\s+bias|RoB)",
+            r"Newcastle[-\s]?Ottawa",
+            r"GRADE",
+        ],
+        [],
+        "Pooling weak studies without noting bias can overstate certainty.",
+    ),
+    (
+        "heterogeneity",
+        "Is between-study heterogeneity considered?",
+        [
+            r"heterogeneity",
+            r"\bI\s*[²2]\b",
+            r"random[-\s]?effects",
+            r"fixed[-\s]?effect",
+        ],
+        [],
+        "High heterogeneity means a single pooled number may mislead.",
+    ),
+    (
+        "reporting_standard",
+        "Is a reporting standard (e.g. PRISMA) mentioned?",
+        [r"\bPRISMA\b", r"MOOSE\b", r"registered\s+(?:in\s+)?PROSPERO"],
+        [],
+        "Reporting checklists make methods more transparent and reproducible.",
+    ),
+    _SHARED_EFFECT_PRECISION,
+]
+
+_GENERIC_SIGNALS: List[_SignalSpec] = [
+    (
+        "methods_described",
+        "Are methods described enough to understand what was done?",
+        [
+            r"\bmethods?\b",
+            r"we\s+(?:included|enrolled|studied|analyzed|analysed)",
+            r"participants?\s+were",
+        ],
+        [],
+        "Without a clear methods sketch, design and bias are hard to judge.",
+    ),
+    _SHARED_EFFECT_PRECISION,
+]
+
+_CHECKLIST_BY_DESIGN: Dict[StudyDesign, Tuple[str, List[_SignalSpec]]] = {
+    StudyDesign.randomized_controlled_trial: ("RCT (CASP-style)", _RCT_SIGNALS),
+    StudyDesign.cohort: ("Cohort (CASP-style)", _COHORT_SIGNALS),
+    StudyDesign.case_control: ("Case-control (CASP-style)", _CASE_CONTROL_SIGNALS),
+    StudyDesign.cross_sectional: ("Cross-sectional (CASP-style)", _CROSS_SECTIONAL_SIGNALS),
+    StudyDesign.systematic_review: ("Systematic review (CASP-style)", _SYNTHESIS_SIGNALS),
+    StudyDesign.meta_analysis: ("Meta-analysis (CASP-style)", _SYNTHESIS_SIGNALS),
+    StudyDesign.case_series: ("Descriptive (generic signals)", _GENERIC_SIGNALS),
+    StudyDesign.case_report: ("Descriptive (generic signals)", _GENERIC_SIGNALS),
+    StudyDesign.narrative_review: ("Narrative review (generic signals)", _GENERIC_SIGNALS),
+    StudyDesign.expert_opinion: ("Expert opinion (generic signals)", _GENERIC_SIGNALS),
+    StudyDesign.unclear: ("Unclear design (generic signals)", _GENERIC_SIGNALS),
+}
+
+
+def _first_match(haystack: str, patterns: List[str]) -> Optional[str]:
+    for pattern in patterns:
+        match = re.search(pattern, haystack, flags=re.IGNORECASE)
+        if match:
+            return match.group(0)
+    return None
+
+
+def _eval_signal(haystack: str, spec: _SignalSpec) -> AppraisalSignal:
+    signal_id, question, positive, concern, note = spec
+    hit = _first_match(haystack, positive)
+    if hit:
+        return AppraisalSignal(
+            id=signal_id,
+            question=question,
+            status=AppraisalSignalStatus.mentioned,
+            matched_phrase=hit,
+            note=note,
+        )
+    worry = _first_match(haystack, concern)
+    if worry:
+        return AppraisalSignal(
+            id=signal_id,
+            question=question,
+            status=AppraisalSignalStatus.concern,
+            matched_phrase=worry,
+            note=note,
+        )
+    return AppraisalSignal(
+        id=signal_id,
+        question=question,
+        status=AppraisalSignalStatus.not_found,
+        matched_phrase=None,
+        note=note,
+    )
+
+
+def appraisal_text(
+    abstract: str,
+    full_text_sections: Optional[Dict[str, str]] = None,
+    *,
+    title: str = "",
+) -> str:
+    """Build the haystack used for appraisal signals (abstract + Methods/Results)."""
+    parts: List[str] = []
+    if title:
+        parts.append(title)
+    if abstract:
+        parts.append(abstract)
+    sections = full_text_sections or {}
+    for keyword in ("METHOD", "RESULT"):
+        section = section_text(sections, keyword)
+        if section:
+            parts.append(section)
+    return "\n".join(parts)
+
+
+def build_appraisal_checklist(
+    design: StudyDesign,
+    abstract: str,
+    full_text_sections: Optional[Dict[str, str]] = None,
+    *,
+    title: str = "",
+) -> AppraisalChecklist:
+    """Detect design-specific CASP-style appraisal phrases. Never sets the grade.
+
+    Status is phrase detection only: ``mentioned``, ``concern``, or ``not_found``.
+    Absence of a phrase is not proof the study lacked that feature — only that the
+    available text did not mention it.
+    """
+    label, specs = _CHECKLIST_BY_DESIGN.get(
+        design, ("Unclear design (generic signals)", _GENERIC_SIGNALS)
+    )
+    haystack = appraisal_text(abstract or "", full_text_sections, title=title)
+    signals = [_eval_signal(haystack, spec) for spec in specs]
+    mentioned = sum(1 for s in signals if s.status == AppraisalSignalStatus.mentioned)
+    concerns = sum(1 for s in signals if s.status == AppraisalSignalStatus.concern)
+    return AppraisalChecklist(
+        design=design,
+        label=label,
+        signals=signals,
+        mentioned_count=mentioned,
+        concern_count=concerns,
+        total=len(signals),
+    )
 
 
 # ---------------------------------------------------------------------------
